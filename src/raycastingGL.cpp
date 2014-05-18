@@ -37,14 +37,13 @@ StopWatchInterface *timer = NULL;
 const int frameN = 24;
 int frameCounter = 0;
 
-#define BUFFER_DATA(i) ((char *)0 + i)
+//#define BUFFER_DATA(i) ((char *)0 + i)
 
 // Auto-Verification Code
 const int frameCheckNumber = 4;
 int fpsCount = 0;        // FPS count for averaging
 int fpsLimit = 1;        // FPS limit for sampling
 unsigned int frameCount = 0;
-unsigned int g_TotalErrors = 0;
 
 int *pArgc = NULL;
 char **pArgv = NULL;
@@ -96,14 +95,14 @@ void computeFPS() {
 	}
 }
 
-void runImageFilters(TColor *d_dst) {
+void runRaycasting(TColor *d_dst) {
 	switch (g_Kernel) {
 	case 0:
 		cuda_Clear(d_dst, imageW, imageH);
 		break;
 	}
 
-	getLastCudaError("Filtering kernel execution failed.\n");
+	getLastCudaError("Raycasting kernel execution failed.\n");
 }
 
 void displayFunc(void) {
@@ -125,7 +124,7 @@ void displayFunc(void) {
 
 	checkCudaErrors(CUDA_Bind2TextureArray());
 
-	runImageFilters(d_dst);
+	runRaycasting(d_dst);
 
 	checkCudaErrors(CUDA_UnbindTexture());
 	// DEPRECATED: checkCudaErrors(cudaGLUnmapBufferObject(gl_PBO));
@@ -136,14 +135,14 @@ void displayFunc(void) {
 		glClear(GL_COLOR_BUFFER_BIT);
 
 		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, imageW, imageH, GL_RGBA,
-				GL_UNSIGNED_BYTE, BUFFER_DATA(0));
+				GL_UNSIGNED_BYTE, NULL);
 		glBegin(GL_TRIANGLES);
 		glTexCoord2f(0, 0);
 		glVertex2f(-1, -1);
 		glTexCoord2f(2, 0);
-		glVertex2f(+3, -1);
+		glVertex2f(3, -1);
 		glTexCoord2f(0, 2);
-		glVertex2f(-1, +3);
+		glVertex2f(-1, 3);
 		glEnd();
 		glFinish();
 	}
