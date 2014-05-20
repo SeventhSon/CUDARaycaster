@@ -85,11 +85,11 @@ CUDA_CALLABLE_MEMBER const Vector3 Vector3::direction() const {
 }
 
 CUDA_CALLABLE_MEMBER float Vector3::dot(const Vector3& q) const{
-	return 0;
+	return this->x*q.x+this->y*q.y+this->z*q.z;
 }
 
 CUDA_CALLABLE_MEMBER const Vector3 Vector3::cross(const Vector3& q) const{
-	return Vector3(0.0f,0.0f,0.0f);
+	return Vector3(this->y*q.z - this->z*q.y,this->z*q.x-this->x*q.z,this->x*q.y-this->y*q.x);
 }
 
 CUDA_CALLABLE_MEMBER const Vector3& Ray::origin() const {
@@ -102,6 +102,7 @@ CUDA_CALLABLE_MEMBER const Vector3& Ray::direction() const {
 CUDA_CALLABLE_MEMBER const Vector3& Triangle::vertex(int i) const {
 	return m_vertex[i];
 }
+
 CUDA_CALLABLE_MEMBER const Vector3& Triangle::normal(int i) const {
 	return m_normal[i];
 }
@@ -168,10 +169,10 @@ __device__ bool sampleRayTriangle(int x, int y, const Ray& R, const Triangle& T,
 	//shade(scene, T, P, n, w_o, radiance);
 
 	// Debugging intersect: set to white on any intersection
-	radiance = Radiance3(0.2f, 0.6f, 1.0f);
+	//radiance = Radiance3(0.2f, 0.6f, 1.0f);
 
 	// Debugging barycentric
-	//radiance = Radiance3(weight[0], weight[1], weight[2]) / 15;
+	radiance = Radiance3(weight[0], weight[1], weight[2]);
 
 	return true;
 }
@@ -189,21 +190,27 @@ __global__ void Clear(TColor *dst, int imageW, int imageH) {
 }
 
 __global__ void rayCast(TColor *dst, int imageW, int imageH,
-		const Camera& camera, unsigned int triangleCount) {
+		const Camera& camera, unsigned int triangleCount,Triangle* d_triangles) {
 	const int ix = blockDim.x * blockIdx.x + threadIdx.x;
 	const int iy = blockDim.y * blockIdx.y + threadIdx.y;
-
+	triangleCount = 1;
 	extern __shared__ Triangle triangles[];
+	triangles[0] =
+	Triangle(Vector3(0,1,-5), Vector3(-1.9,-1,-5), Vector3(1.6,-0.5,-5),
+				Vector3(0,0.6f,1).direction(),
+				Vector3(-0.4f,-0.4f, 1.0f).direction(),
+				Vector3(0.4f,-0.4f, 1.0f).direction());
+	Camera cam;
 
 	Radiance3 L_o;
-	const Ray& R = computeEyeRay(ix + 0.5f, iy + 0.5f, imageW, imageH, camera);
+	const Ray& R = computeEyeRay(ix + 0.5f, iy + 0.5f, imageW, imageH, cam);
 	float distance = INFINITY;
 	dst[imageW * iy + ix] = make_color(1.0, 1.0, 1.0, 1.0);
 	for (unsigned int t = 0; t < triangleCount; ++t) {
 		const Triangle& T = triangles[t];
 		if (sampleRayTriangle(ix, iy, R, T, L_o, distance)) {
 			if (ix < imageW && iy < imageH) {
-				dst[imageW * iy + ix] = make_color(1.0, 0.5, 0.75, 1.0);
+				dst[imageW * iy + ix] = make_color(L_o.r, L_o.g, L_o.b, 1.0);
 			}
 		}
 	}
@@ -243,10 +250,10 @@ extern "C" void cuda_Clear(TColor *d_dst, int imageW, int imageH) {
 }
 
 extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
-		const Camera& camera, unsigned int triangleCount) {
+		const Camera& camera, unsigned int triangleCount, Triangle* d_triangles) {
 	dim3 threads(BLOCKDIM_X, BLOCKDIM_Y);
 	dim3 grid(iDivUp(imageW, BLOCKDIM_X), iDivUp(imageH, BLOCKDIM_Y));
 
 	rayCast<<<grid, threads, triangleCount * sizeof(Triangle)>>>(d_dst, imageW,
-			imageH, camera, triangleCount);
+			imageH, camera, triangleCount, d_triangles);
 }

@@ -18,6 +18,9 @@
 class Vector3 {
 public:
 	float x, y, z;
+	CUDA_CALLABLE_MEMBER Vector3() :
+			x(0.0f),y(0.0f),z(0.0f){
+	}
 	CUDA_CALLABLE_MEMBER Vector3(float xx, float yy, float zz) :
 			y(yy), x(xx), z(zz) {
 	}
@@ -75,6 +78,14 @@ private:
 	Vector3 m_vertex[3];
 	Vector3 m_normal[3];
 public:
+	CUDA_CALLABLE_MEMBER Triangle(const Vector3& v1,const Vector3& v2, const Vector3& v3, const Vector3& n1, const Vector3& n2, const Vector3& n3){
+		m_vertex[0]=v1;
+		m_vertex[1]=v2;
+		m_vertex[2]=v3;
+		m_normal[0]=n1;
+		m_normal[1]=n2;
+		m_normal[2]=n3;
+	}
 	CUDA_CALLABLE_MEMBER const Vector3& vertex(int i) const;
 	CUDA_CALLABLE_MEMBER const Vector3& normal(int i) const;
 };

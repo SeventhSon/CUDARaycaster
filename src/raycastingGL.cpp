@@ -23,7 +23,7 @@ GLuint gl_PBO, gl_Tex;
 struct cudaGraphicsResource *cuda_pbo_resource; // handles OpenGL-CUDA exchange
 //Source image on the host side
 uchar4 *h_Src;
-int imageW = 1024, imageH = 640;
+int imageW = 240, imageH = 120;
 GLuint shader;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -98,7 +98,7 @@ void computeFPS() {
 void runRaycasting(TColor *d_dst) {
 	switch (g_Kernel) {
 	case 0:
-		cuda_Clear(d_dst, imageW, imageH);
+		cuda_rayCasting(d_dst, imageW, imageH,Camera(),1,0);
 		break;
 	}
 
