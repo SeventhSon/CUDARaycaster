@@ -196,7 +196,7 @@ __global__ void rayCast(TColor *dst, int imageW, int imageH,
 	triangleCount = 1;
 	extern __shared__ Triangle triangles[];
 	triangles[0] =
-	Triangle(Vector3(0,1,-5), Vector3(-1.9,-1,-5), Vector3(1.6,-0.5,-5),
+	Triangle(Vector3(0,1,-2), Vector3(-1.9,-1,-2), Vector3(1.6,-0.5,-2),
 				Vector3(0,0.6f,1).direction(),
 				Vector3(-0.4f,-0.4f, 1.0f).direction(),
 				Vector3(0.4f,-0.4f, 1.0f).direction());

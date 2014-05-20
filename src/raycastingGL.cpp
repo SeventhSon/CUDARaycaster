@@ -23,7 +23,7 @@ GLuint gl_PBO, gl_Tex;
 struct cudaGraphicsResource *cuda_pbo_resource; // handles OpenGL-CUDA exchange
 //Source image on the host side
 uchar4 *h_Src;
-int imageW = 240, imageH = 120;
+int imageW = 1024, imageH = 768;
 GLuint shader;
 
 ////////////////////////////////////////////////////////////////////////////////
