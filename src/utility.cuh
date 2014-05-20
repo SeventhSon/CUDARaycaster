@@ -24,6 +24,7 @@ public:
 	CUDA_CALLABLE_MEMBER const Vector3 operator*(const float q) const;
 	CUDA_CALLABLE_MEMBER const Vector3 operator+(const Vector3& q) const;
 	CUDA_CALLABLE_MEMBER const Vector3 operator-(const Vector3& q) const;
+	CUDA_CALLABLE_MEMBER const Vector3 operator-() const;
 	CUDA_CALLABLE_MEMBER const Vector3 direction() const;
 	CUDA_CALLABLE_MEMBER float dot(const Vector3& q) const;
 	CUDA_CALLABLE_MEMBER const Vector3 cross(const Vector3& q) const;
@@ -45,6 +46,12 @@ public:
 class Color3 {
 public:
 	float r, g, b;
+	CUDA_CALLABLE_MEMBER Color3(): r(0.0f),g(0.0f),b(0.0f){
+
+	}
+	CUDA_CALLABLE_MEMBER Color3(float rr, float gg, float bb) : r(rr), g(gg), b(bb){
+
+	}
 };
 
 typedef Color3 Radiance3;

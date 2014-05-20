@@ -46,38 +46,50 @@ cudaArray *a_Src;
 ////////////////////////////////////////////////////////////////////////////////
 //Raycasting Classes' functions
 ////////////////////////////////////////////////////////////////////////////////
-CUDA_CALLABLE_MEMBER const Vector2 Vector2::operator*(const float &q) const{
+CUDA_CALLABLE_MEMBER const Vector2 Vector2::operator*(const float &q) const {
 	return (Vector2(this->x * 3, this->y * 3));
 }
 
-CUDA_CALLABLE_MEMBER const Vector2 Vector2::operator+(const Vector2& q) const{
+CUDA_CALLABLE_MEMBER const Vector2 Vector2::operator+(const Vector2& q) const {
 	return (Vector2(this->x + q.x, this->y + q.y));
 }
 
-CUDA_CALLABLE_MEMBER const Vector2 Vector2::operator-(const Vector2& q) const{
+CUDA_CALLABLE_MEMBER const Vector2 Vector2::operator-(const Vector2& q) const {
 	return (Vector2(x - q.x, y - q.y));
 }
 
-CUDA_CALLABLE_MEMBER const Vector2 Vector2::direction() const{
+CUDA_CALLABLE_MEMBER const Vector2 Vector2::direction() const {
 	float length = sqrtf((this->x * this->x) + (this->y * this->y));
 	return Vector2(this->x / length, this->y / length);
 }
 
-CUDA_CALLABLE_MEMBER const Vector3 Vector3::operator*(const float q) const{
+CUDA_CALLABLE_MEMBER const Vector3 Vector3::operator*(const float q) const {
 	return (Vector3(this->x * q, this->y * q, this->z * q));
 }
 
-CUDA_CALLABLE_MEMBER const Vector3 Vector3::operator+(const Vector3& q) const{
+CUDA_CALLABLE_MEMBER const Vector3 Vector3::operator+(const Vector3& q) const {
 	return (Vector3(this->x + q.x, this->y + q.y, this->z + q.z));
 }
 
 CUDA_CALLABLE_MEMBER const Vector3 Vector3::operator-(const Vector3& q) const {
 	return (Vector3(this->x - q.x, this->y - q.y, this->z - q.z));
 }
+CUDA_CALLABLE_MEMBER const Vector3 Vector3::operator-() const{
+	return Vector3(-(this->x), -(this->y), -(this->z));
+}
 
-CUDA_CALLABLE_MEMBER const Vector3 Vector3::direction() const{
-	float length = sqrtf((this->x * this->x) + (this->y * this->y) + (this->z * this->z));
+CUDA_CALLABLE_MEMBER const Vector3 Vector3::direction() const {
+	float length = sqrtf(
+			(this->x * this->x) + (this->y * this->y) + (this->z * this->z));
 	return Vector3(this->x / length, this->y / length, this->z / length);
+}
+
+CUDA_CALLABLE_MEMBER float Vector3::dot(const Vector3& q) const{
+	return 0;
+}
+
+CUDA_CALLABLE_MEMBER const Vector3 Vector3::cross(const Vector3& q) const{
+	return Vector3(0.0f,0.0f,0.0f);
 }
 
 CUDA_CALLABLE_MEMBER const Vector3& Ray::origin() const {
@@ -109,32 +121,6 @@ __device__ Ray computeEyeRay(float x, float y, int width, int height,
 	return Ray(start, start.direction());
 }
 
-__device__ bool sampleRayTriangle(const Scene& scene, int x, int y,
-		const Ray& R, const Triangle& T, Radiance3& radiance, float& distance) {
-	float weight[3];
-	const float d = intersect(R, T, weight);
-	if (d >= distance) {
-		return false;
-	}
-	// This intersection is closer than the previous one
-	// Intersection point
-	const Vector3& P = R.origin() + R.direction() * d;
-	// Find the interpolated vertex normal at the intersection
-	const Vector3& n = (T.normal(0) * weight[0] + T.normal(1) * weight[1]
-			+ T.normal(2) * weight[2]).direction();
-	const Vector3& w_o = -R.direction();
-
-	//shade(scene, T, P, n, w_o, radiance);
-
-	// Debugging intersect: set to white on any intersection
-	//radiance = Radiance3(1, 1, 1);
-
-	// Debugging barycentric
-	//radiance = Radiance3(weight[0], weight[1], weight[2]) / 15;
-
-	return true;
-}
-
 __device__ float intersect(const Ray& R, const Triangle& T, float weight[3]) {
 	const Vector3& e1 = T.vertex(1) - T.vertex(0);
 	const Vector3& e2 = T.vertex(2) - T.vertex(0);
@@ -164,6 +150,32 @@ __device__ float intersect(const Ray& R, const Triangle& T, float weight[3]) {
 	}
 }
 
+__device__ bool sampleRayTriangle(int x, int y, const Ray& R, const Triangle& T,
+		Radiance3& radiance, float& distance) {
+	float weight[3];
+	const float d = intersect(R, T, weight);
+	if (d >= distance) {
+		return false;
+	}
+	// This intersection is closer than the previous one
+	// Intersection point
+	const Vector3& P = R.origin() + R.direction() * d;
+	// Find the interpolated vertex normal at the intersection
+	const Vector3& n = (T.normal(0) * weight[0] + T.normal(1) * weight[1]
+			+ T.normal(2) * weight[2]).direction();
+	const Vector3& w_o = -R.direction();
+
+	//shade(scene, T, P, n, w_o, radiance);
+
+	// Debugging intersect: set to white on any intersection
+	radiance = Radiance3(0.2f, 0.6f, 1.0f);
+
+	// Debugging barycentric
+	//radiance = Radiance3(weight[0], weight[1], weight[2]) / 15;
+
+	return true;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // kernels
 ////////////////////////////////////////////////////////////////////////////////
@@ -176,18 +188,20 @@ __global__ void Clear(TColor *dst, int imageW, int imageH) {
 	}
 }
 
-__global__ void rayCast(TColor *dst, int imageW, int imageH, const Scene& scene,
-		const Camera& camera) {
+__global__ void rayCast(TColor *dst, int imageW, int imageH,
+		const Camera& camera, unsigned int triangleCount) {
 	const int ix = blockDim.x * blockIdx.x + threadIdx.x;
 	const int iy = blockDim.y * blockIdx.y + threadIdx.y;
+
+	extern __shared__ Triangle triangles[];
 
 	Radiance3 L_o;
 	const Ray& R = computeEyeRay(ix + 0.5f, iy + 0.5f, imageW, imageH, camera);
 	float distance = INFINITY;
 	dst[imageW * iy + ix] = make_color(1.0, 1.0, 1.0, 1.0);
-	for (unsigned int t = 0; t < scene.triangleCount; ++t) {
-		const Triangle& T = scene.triangles[t];
-		if (sampleRayTriangle(scene, ix, iy, R, T, L_o, distance)) {
+	for (unsigned int t = 0; t < triangleCount; ++t) {
+		const Triangle& T = triangles[t];
+		if (sampleRayTriangle(ix, iy, R, T, L_o, distance)) {
 			if (ix < imageW && iy < imageH) {
 				dst[imageW * iy + ix] = make_color(1.0, 0.5, 0.75, 1.0);
 			}
@@ -229,9 +243,10 @@ extern "C" void cuda_Clear(TColor *d_dst, int imageW, int imageH) {
 }
 
 extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
-		const Scene& scene, const Camera& camera) {
+		const Camera& camera, unsigned int triangleCount) {
 	dim3 threads(BLOCKDIM_X, BLOCKDIM_Y);
 	dim3 grid(iDivUp(imageW, BLOCKDIM_X), iDivUp(imageH, BLOCKDIM_Y));
 
-	rayCast<<<grid, threads>>>(d_dst, imageW, imageH, scene, camera);
+	rayCast<<<grid, threads, triangleCount * sizeof(Triangle)>>>(d_dst, imageW,
+			imageH, camera, triangleCount);
 }
