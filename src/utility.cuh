@@ -14,6 +14,8 @@
 #define CUDA_CALLABLE_MEMBER
 #endif
 
+# define PI 3.14159265358979323846
+
 //Raycasting Classes
 class Vector3 {
 public:
@@ -115,6 +117,32 @@ public:
 	}
 	CUDA_CALLABLE_MEMBER const Vector3& vertex(int i) const;
 	CUDA_CALLABLE_MEMBER const Vector3& normal(int i) const;
+	CUDA_CALLABLE_MEMBER const BSDF& bsdf() const;
+};
+
+class Face {
+private:
+	unsigned int m_vertex_i[3];
+	unsigned int m_normal_i[3];
+	float* vertexData, *normalData;
+	BSDF m_bsdf;
+public:
+	CUDA_CALLABLE_MEMBER Face(const unsigned int& v1,const unsigned int& v2, const unsigned int& v3, const unsigned int& n1, const unsigned int& n2, const unsigned int& n3, const BSDF& bsdf){
+		m_vertex_i[0]=v1;
+		m_vertex_i[1]=v2;
+		m_vertex_i[2]=v3;
+		m_normal_i[0]=n1;
+		m_normal_i[1]=n2;
+		m_normal_i[2]=n3;
+		m_bsdf = bsdf;
+
+	}
+	CUDA_CALLABLE_MEMBER void setData(float* vData, float* nData){
+		vertexData = vData;
+		normalData = nData;
+	}
+	CUDA_CALLABLE_MEMBER const Vector3 vertex(int i) const;
+	CUDA_CALLABLE_MEMBER const Vector3 normal(int i) const;
 	CUDA_CALLABLE_MEMBER const BSDF& bsdf() const;
 };
 

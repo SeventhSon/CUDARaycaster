@@ -126,6 +126,18 @@ CUDA_CALLABLE_MEMBER const BSDF& Triangle::bsdf() const {
 	return m_bsdf;
 }
 
+CUDA_CALLABLE_MEMBER const Vector3 Face::vertex(int i) const {
+	return Vector3(vertexData[m_vertex_i[i]*3],vertexData[m_vertex_i[i]*3+1],vertexData[m_vertex_i[i]*3+2]);
+}
+
+CUDA_CALLABLE_MEMBER const Vector3 Face::normal(int i) const {
+	return Vector3(normalData[m_normal_i[i]*3],normalData[m_normal_i[i]*3+1],normalData[m_normal_i[i]*3+2]);
+}
+
+CUDA_CALLABLE_MEMBER const BSDF& Face::bsdf() const {
+	return m_bsdf;
+}
+
 CUDA_CALLABLE_MEMBER const Color3 Color3::operator*(const float &q) const{
 	return Color3(min(this->r*q,1.0f),min(this->g*q,1.0f),min(this->b*q,1.0f));
 }
@@ -164,7 +176,7 @@ __device__ Ray computeEyeRay(float x, float y, int width, int height,
 	return Ray(start, start.direction());
 }
 
-__device__ float intersect(const Ray& R, const Triangle& T, float weight[3]) {
+__device__ float intersect(const Ray& R, const Face& T, float weight[3]) {
 	const Vector3& e1 = T.vertex(1) - T.vertex(0);
 	const Vector3& e2 = T.vertex(2) - T.vertex(0);
 	const Vector3& q = R.direction().cross(e2);
@@ -192,7 +204,7 @@ __device__ float intersect(const Ray& R, const Triangle& T, float weight[3]) {
 		return dist;
 	}
 }
-__device__ void shade(const Triangle& T, const Vector3& P,const Vector3& n, const Vector3& w_o, Radiance3& L_o, Light& light) {
+__device__ void shade(const Face& T, const Vector3& P,const Vector3& n, const Vector3& w_o, Radiance3& L_o, Light& light) {
 
 	const Vector3& offset = light.position - P;
 	const float distanceToLight = offset.length();
@@ -203,7 +215,7 @@ __device__ void shade(const Triangle& T, const Vector3& P,const Vector3& n, cons
 	L_o = L_o*T.bsdf().evaluateFiniteScatteringDensity(w_i, w_o,n) * max(0.0, w_i.dot(n));
 }
 
-__device__ bool sampleRayTriangle(const Ray& R, const Triangle& T,
+__device__ bool sampleRayTriangle(const Ray& R, const Face& T,
 		Radiance3& radiance, float& distance, Light& light) {
 	float weight[3];
 	const float d = intersect(R, T, weight);
@@ -238,23 +250,32 @@ __global__ void Clear(TColor *dst, int imageW, int imageH) {
 	}
 }
 
+extern __shared__ float sharedData[];
+
 __global__ void rayCast(TColor *dst, int imageW, int imageH,
-		Camera camera, Light light, unsigned int triangleCount,Triangle* d_triangles) {
+		Camera camera, Light light, unsigned int faceCount, unsigned int vertexCount, unsigned int normalCount,Face* d_faces,float* d_vertices, float*d_normals) {
 	const int ix = blockDim.x * blockIdx.x + threadIdx.x;
 	const int iy = blockDim.y * blockIdx.y + threadIdx.y;
 
-	extern __shared__ Triangle triangles[];
+	float* sh_vertices = (float*)&sharedData;
+	float* sh_normals = (float*)&sh_vertices[vertexCount*3];
+	Face* sh_faces = (Face*)&sh_normals[normalCount*3];
 
-	if (threadIdx.x < warpSize)
-		for(int i = threadIdx.x; i  <triangleCount; i += warpSize)
-			triangles[i] = d_triangles[i];
+	if (threadIdx.x < warpSize){
+		for(int i = threadIdx.x; i < vertexCount*3; i += warpSize)
+			sh_vertices[i] = d_vertices[i];
+		for(int i = threadIdx.x+vertexCount; i < normalCount*3; i += warpSize)
+			sh_normals[i] = d_normals[i];
+		for(int i = threadIdx.x; i  <vertexCount; i += warpSize)
+			sh_faces[i] = d_faces[i];
+	}
 	__syncthreads();
 
 	Radiance3 L_o;
 	const Ray& R = computeEyeRay(ix + 0.5f, iy + 0.5f, imageW, imageH, camera);
 	float distance = INFINITY;
-	for (unsigned int t = 0; t < triangleCount; ++t) {
-		const Triangle& T = triangles[t];
+	for (unsigned int t = 0; t < faceCount; ++t) {
+		const Face& T = sh_faces[t];
 		if (sampleRayTriangle(R, T, L_o, distance,light)) {
 			if (ix < imageW && iy < imageH) {
 				dst[imageW * iy + ix] = make_color(L_o.r, L_o.g, L_o.b, 1.0);
@@ -297,10 +318,10 @@ extern "C" void cuda_Clear(TColor *d_dst, int imageW, int imageH) {
 }
 
 extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
-		Camera camera, Light light, unsigned int triangleCount, Triangle* d_triangles) {
+		Camera camera, Light light, unsigned int triangleCount, Triangle* d_triangles,unsigned int faceCount, unsigned int vertexCount, unsigned int normalCount,Face* d_faces,float* d_vertices, float*d_normals) {
 	dim3 threads(BLOCKDIM_X, BLOCKDIM_Y);
 	dim3 grid(iDivUp(imageW, BLOCKDIM_X), iDivUp(imageH, BLOCKDIM_Y));
 
-	rayCast<<<grid, threads, triangleCount * sizeof(Triangle)>>>(d_dst, imageW,
-			imageH, camera, light, triangleCount, d_triangles);
+	rayCast<<<grid, threads, (vertexCount*3+normalCount*3)*sizeof(float) sizeof(Triangle)>>>(d_dst, imageW,
+			imageH, camera, light, unsigned int faceCount, unsigned int vertexCount, unsigned int normalCount,Face* d_faces,float* d_vertices, float*d_normals);
 }

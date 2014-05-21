@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "raycasting.h"
+#include "objLoader.h"
 
 // includes, project
 #include <helper_functions.h> // includes for helper utility functions
@@ -29,6 +30,8 @@ GLuint shader;
 //Host side scene
 Triangle *h_triangles, *d_triangles;
 int triangleCount = 1;
+Face *d_faces;
+float *d_normals, *d_vertices;
 Light light(Vector3(1.0f, 1.0f, 1.0f), Power3(80.0, 80.0, 80.0));
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -190,32 +193,38 @@ void shutDown(unsigned char k, int /*x*/, int /*y*/) {
 	case 'a':
 		light.position = Vector3(light.position.x - 0.4f, light.position.y,
 				light.position.z);
-		printf("Light (%f, %f, %f)\n",light.position.x,light.position.y,light.position.z);
+		printf("Light (%f, %f, %f)\n", light.position.x, light.position.y,
+				light.position.z);
 		break;
 	case 'd':
 		light.position = Vector3(light.position.x + 0.4f, light.position.y,
 				light.position.z);
-		printf("Light (%f, %f, %f)\n",light.position.x,light.position.y,light.position.z);
+		printf("Light (%f, %f, %f)\n", light.position.x, light.position.y,
+				light.position.z);
 		break;
 	case 'w':
 		light.position = Vector3(light.position.x, light.position.y - 0.4f,
 				light.position.z);
-		printf("Light (%f, %f, %f)\n",light.position.x,light.position.y,light.position.z);
+		printf("Light (%f, %f, %f)\n", light.position.x, light.position.y,
+				light.position.z);
 		break;
 	case 's':
 		light.position = Vector3(light.position.x, light.position.y + 0.4f,
 				light.position.z);
-		printf("Light (%f, %f, %f)\n",light.position.x,light.position.y,light.position.z);
+		printf("Light (%f, %f, %f)\n", light.position.x, light.position.y,
+				light.position.z);
 		break;
 	case 'q':
 		light.position = Vector3(light.position.x, light.position.y,
-				light.position.z-0.4f);
-		printf("Light (%f, %f, %f)\n",light.position.x,light.position.y,light.position.z);
+				light.position.z - 0.4f);
+		printf("Light (%f, %f, %f)\n", light.position.x, light.position.y,
+				light.position.z);
 		break;
 	case 'e':
 		light.position = Vector3(light.position.x, light.position.y,
-				light.position.z+0.4f);
-		printf("Light (%f, %f, %f)\n",light.position.x,light.position.y,light.position.z);
+				light.position.z + 0.4f);
+		printf("Light (%f, %f, %f)\n", light.position.x, light.position.y,
+				light.position.z);
 		break;
 	}
 }
@@ -323,6 +332,7 @@ void cleanup() {
 int main(int argc, char **argv) {
 	char *dump_file = NULL;
 	int clearColorbit = 255 << 24 | 0 << 16 | 0 << 8 | 0;
+	objLoader loader;
 
 	pArgc = &argc;
 	pArgv = argv;
@@ -340,16 +350,27 @@ int main(int argc, char **argv) {
 
 	initOpenGLBuffers();
 
-	h_triangles = (Triangle*) malloc(sizeof(Triangle) * triangleCount);
-	h_triangles[0] = Triangle(Vector3(1.6, 0.5, -2), Vector3(-1.9, 1, -2),
-			Vector3(0, -1, -2), Vector3(0, 0.6f, 1).direction(),
-			Vector3(-0.4f, -0.4f, 1.0f).direction(),
-			Vector3(0.4f, -0.4f, 1.0f).direction(),
-			BSDF(Color3(0.4f, 0.1f, 0.8f), Color3(0.1f, 0.1f, 0.1f), 20.0f));
-	checkCudaErrors(cudaMalloc(&d_triangles, sizeof(Triangle) * triangleCount));
-	checkCudaErrors(
-			cudaMemcpy(d_triangles, h_triangles,
-					triangleCount * sizeof(Triangle), cudaMemcpyHostToDevice));
+	if (loader.parseOBJ("/home/guru/teapot.obj")) {
+		checkCudaErrors(cudaMalloc(&d_faces, sizeof(Face) * loader.faceCount));
+		checkCudaErrors(
+				cudaMalloc(&d_normals, sizeof(float) * loader.normalCount));
+		checkCudaErrors(
+				cudaMalloc(&d_vertices, sizeof(float) * loader.vertexCount));
+
+		checkCudaErrors(
+				cudaMemcpy(d_faces, loader.faces_arr,
+						loader.faceCount * sizeof(Face),
+						cudaMemcpyHostToDevice));
+		checkCudaErrors(
+				cudaMemcpy(d_normals, loader.normals_arr,
+						loader.normalCount * sizeof(float),
+						cudaMemcpyHostToDevice));
+		checkCudaErrors(
+				cudaMemcpy(d_vertices, loader.vertices_arr,
+						loader.vertexCount * sizeof(float),
+						cudaMemcpyHostToDevice));
+	} else
+		exit(EXIT_FAILURE);
 
 	printf("Starting GLUT main loop...\n");
 
@@ -362,11 +383,11 @@ int main(int argc, char **argv) {
 	glutTimerFunc(REFRESH_DELAY, timerEvent, 0);
 	glutMainLoop();
 
-	// cudaDeviceReset causes the driver to clean up all state. While
-	// not mandatory in normal operation, it is good practice.  It is also
-	// needed to ensure correct operation when the application is being
-	// profiled. Calling cudaDeviceReset causes all profile data to be
-	// flushed before the application exits
+// cudaDeviceReset causes the driver to clean up all state. While
+// not mandatory in normal operation, it is good practice.  It is also
+// needed to ensure correct operation when the application is being
+// profiled. Calling cudaDeviceReset causes all profile data to be
+// flushed before the application exits
 	cudaDeviceReset();
 	exit(EXIT_SUCCESS);
 }

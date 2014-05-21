@@ -8,14 +8,16 @@
 #ifndef OBJLOADER_H_
 #define OBJLOADER_H_
 
+#include "utility.cuh"
+
 // OBJ reader
 class objLoader {
 public:
-	float triangle_count, normal_count, vertex_count;
-	float *faces;
-	float *normals;
-	float *vertices;
-	void parseOBJ(char* file);
+	Face *faces_arr;
+	float *normals_arr;
+	float *vertices_arr;
+	unsigned int vertexCount, faceCount, normalCount;
+	bool parseOBJ(const char* file);
 };
 
 #endif /* OBJLOADER_H_ */
