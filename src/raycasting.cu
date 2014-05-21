@@ -44,7 +44,7 @@ cudaArray *a_Src;
 
 #include "utility.cuh"
 ////////////////////////////////////////////////////////////////////////////////
-//Raycasting Classes' functions
+// Vector2
 ////////////////////////////////////////////////////////////////////////////////
 CUDA_CALLABLE_MEMBER const Vector2 Vector2::operator*(const float &q) const {
 	return (Vector2(this->x * q, this->y * q));
@@ -69,6 +69,10 @@ CUDA_CALLABLE_MEMBER const Vector2 Vector2::direction() const {
 CUDA_CALLABLE_MEMBER float Vector2::length() const {
 	return sqrtf((this->x * this->x) + (this->y * this->y));
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Vector3
+////////////////////////////////////////////////////////////////////////////////
 
 CUDA_CALLABLE_MEMBER const Vector3 Vector3::operator*(const float q) const {
 	return (Vector3(this->x * q, this->y * q, this->z * q));
@@ -109,6 +113,10 @@ CUDA_CALLABLE_MEMBER float Vector3::length() const {
 			(this->x * this->x) + (this->y * this->y) + (this->z * this->z));
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Ray
+////////////////////////////////////////////////////////////////////////////////
+
 CUDA_CALLABLE_MEMBER const Vector3& Ray::origin() const {
 	return m_origin;
 }
@@ -116,6 +124,9 @@ CUDA_CALLABLE_MEMBER const Vector3& Ray::direction() const {
 	return m_direction;
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Triangle
+////////////////////////////////////////////////////////////////////////////////
 CUDA_CALLABLE_MEMBER const Vector3& Triangle::vertex(int i) const {
 	return m_vertex[i];
 }
@@ -127,7 +138,9 @@ CUDA_CALLABLE_MEMBER const Vector3& Triangle::normal(int i) const {
 CUDA_CALLABLE_MEMBER const BSDF& Triangle::bsdf() const {
 	return m_bsdf;
 }
-
+////////////////////////////////////////////////////////////////////////////////
+// Color3
+////////////////////////////////////////////////////////////////////////////////
 CUDA_CALLABLE_MEMBER const Color3 Color3::operator*(const float &q) const {
 	return Color3(min(this->r * q, 1.0f), min(this->g * q, 1.0f),
 			min(this->b * q, 1.0f));
@@ -228,7 +241,7 @@ __device__ bool sampleRayTriangle(const Ray& R, const Triangle& T,
 	shade(T, P, n, w_o, radiance, light);
 
 	// Debugging barycentric
-	//radiance = Radiance3(weight[0], weight[1], weight[2])*0.14f;
+	// radiance = Radiance3(weight[0], weight[1], weight[2])*0.14f;
 
 	return true;
 }
@@ -239,55 +252,64 @@ __device__ Vector3 getVector(int i, float* data) {
 ////////////////////////////////////////////////////////////////////////////////
 // kernels
 ////////////////////////////////////////////////////////////////////////////////
-__global__ void Clear(TColor *dst, int imageW, int imageH) {
-	const int ix = blockDim.x * blockIdx.x + threadIdx.x;
-	const int iy = blockDim.y * blockIdx.y + threadIdx.y;
 
-	if (ix < imageW && iy < imageH) {
-		dst[imageW * iy + ix] = make_color(0.9, 0.5, 1.0, 1.0);
-	}
-}
-
+//Shared memory handle
 extern __shared__ float sharedData[];
 
 __global__ void rayCast(TColor *dst, int imageW, int imageH, Camera camera,
 		Light light, unsigned int faceCount, unsigned int vertexCount,
 		unsigned int normalCount, float* d_faces, float* d_vertices,
 		float*d_normals) {
+	//Global x, y image coordinates
 	const int ix = blockDim.x * blockIdx.x + threadIdx.x;
 	const int iy = blockDim.y * blockIdx.y + threadIdx.y;
-	const int threads = blockDim.x*blockDim.y;
+	//Number of threads in a block
+	const int threads = blockDim.x * blockDim.y;
+	//The serial id of a thread in its block
+	const int serialId = threadIdx.x + threadIdx.y * blockDim.x;
 
+	//Define sharedMemory array handlers for conviniece
 	float* sh_vertices = (float*) &sharedData;
 	float* sh_normals = (float*) &sh_vertices[vertexCount * 3];
 	float* sh_faces = (float*) &sh_normals[normalCount * 3];
 
-	for (int i = threadIdx.x+threadIdx.y*blockDim.x; i < vertexCount * 3; i += threads)
+	//Loading triangle data to sharedMemory
+	for (int i = serialId; i < vertexCount * 3; i += threads)
 		sh_vertices[i] = d_vertices[i];
-	for (int i = threadIdx.x+threadIdx.y*blockDim.x; i < normalCount * 3; i += threads)
+	for (int i = serialId; i < normalCount * 3; i += threads)
 		sh_normals[i] = d_normals[i];
-	for (int i = threadIdx.x+threadIdx.y*blockDim.x; i < faceCount * 6; i += threads)
+	for (int i = serialId; i < faceCount * 6; i += threads)
 		sh_faces[i] = d_faces[i];
-
+	//Wait for everyone to be ready
 	__syncthreads();
 
+	//Color of our pixel
 	Radiance3 L_o;
+	//Ray from camera (right now fixed to 0,0,0) to near plane
 	const Ray& R = computeEyeRay(ix + 0.5f, iy + 0.5f, imageW, imageH, camera);
+	//Now find the closest triangle that intersects with our ray
 	float distance = INFINITY;
 	for (unsigned int t = 0; t < faceCount * 6; t += 6) {
-		const Triangle& T = Triangle(getVector((sh_faces[t]-1)*3, sh_vertices),
-				getVector((sh_faces[t + 1]-1)*3, sh_vertices),
-				getVector((sh_faces[t + 2]-1)*3, sh_vertices),
-				getVector((sh_faces[t + 3]-1)*3, sh_normals),
-				getVector((sh_faces[t + 4]-1)*3, sh_normals),
-				getVector((sh_faces[t + 5]-1)*3, sh_normals),
+		//Construct a triangle from sharedMemory based on face index and its data.
+		//Each face is composed of 6 floats (3 vertex indices, 3 normal indices).
+		//Each vertex and normal is composed of 3 floats (x,y,z) and reside in their
+		//respective arrays sh_vertices, sh_normals, use getVector to grab data
+		//(This shouldn't be creating new Triangle for each face...)
+		const Triangle& T = Triangle(
+				getVector((sh_faces[t] - 1) * 3, sh_vertices),
+				getVector((sh_faces[t + 1] - 1) * 3, sh_vertices),
+				getVector((sh_faces[t + 2] - 1) * 3, sh_vertices),
+				getVector((sh_faces[t + 3] - 1) * 3, sh_normals),
+				getVector((sh_faces[t + 4] - 1) * 3, sh_normals),
+				getVector((sh_faces[t + 5] - 1) * 3, sh_normals),
 				BSDF(Color3(0.2f, 0.1f, 0.8f), Color3(0.1f, 0.1f, 0.1f),
 						20.0f));
-		if (sampleRayTriangle(R, T, L_o, distance, light)) {
-			if (ix < imageW && iy < imageH) {
-				dst[imageW * iy + ix] = make_color(L_o.r, L_o.g, L_o.b, 1.0);
-			}
-		}
+		//Try this triangle and our ray
+		sampleRayTriangle(R, T, L_o, distance, light);
+	}
+	//Draw our pixel if we are not outside of the buffer!
+	if (ix < imageW && iy < imageH) {
+		dst[imageW * iy + ix] = make_color(L_o.r, L_o.g, L_o.b, 1.0);
 	}
 }
 
@@ -317,13 +339,6 @@ extern "C" cudaError_t CUDA_FreeArray() {
 	return cudaFreeArray(a_Src);
 }
 
-extern "C" void cuda_Clear(TColor *d_dst, int imageW, int imageH) {
-	dim3 threads(BLOCKDIM_X, BLOCKDIM_Y);
-	dim3 grid(iDivUp(imageW, BLOCKDIM_X), iDivUp(imageH, BLOCKDIM_Y));
-
-	Clear<<<grid, threads>>>(d_dst, imageW, imageH);
-}
-
 extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
 		Camera camera, Light light, unsigned int faceCount,
 		unsigned int vertexCount, unsigned int normalCount, float* d_faces,
@@ -331,7 +346,7 @@ extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
 	dim3 threads(BLOCKDIM_X, BLOCKDIM_Y);
 	dim3 grid(iDivUp(imageW, BLOCKDIM_X), iDivUp(imageH, BLOCKDIM_Y));
 
-	//printf("MEm needed %d",
+	//printf("MEm needed %d\n",
 	//		((vertexCount * 3 + normalCount * 3 + faceCount * 6) * sizeof(float)));
 	rayCast<<<grid, threads,
 			((vertexCount * 3 + normalCount * 3 + faceCount * 6) * sizeof(float))>>>(

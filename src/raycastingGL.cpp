@@ -10,8 +10,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "raycasting.h"
-#include "objLoader.h"
+#include "raycasting.h" //
+#include "objLoader.h" //simple OBJ model loader
 
 // includes, project
 #include <helper_functions.h> // includes for helper utility functions
@@ -27,7 +27,7 @@ uchar4 *h_Src;
 int imageW = 800, imageH = 600;
 GLuint shader;
 
-//Host side scene
+//Host side scene definition arrays
 objLoader loader;
 float *d_normals, *d_vertices, *d_faces;
 Light light(Vector3(1.0f, 1.0f, 1.0f), Power3(200.0, 200.0, 200.0));
@@ -35,7 +35,6 @@ Light light(Vector3(1.0f, 1.0f, 1.0f), Power3(200.0, 200.0, 200.0));
 ////////////////////////////////////////////////////////////////////////////////
 // Main program
 ////////////////////////////////////////////////////////////////////////////////
-int g_Kernel = 0;
 bool g_FPS = false;
 bool g_Diag = false;
 StopWatchInterface *timer = NULL;
@@ -43,7 +42,8 @@ StopWatchInterface *timer = NULL;
 const int frameN = 24;
 int frameCounter = 0;
 
-#define BUFFER_DATA(i) ((char *)0 + i)
+//No idea what the hell was this for
+//#define BUFFER_DATA(i) ((char *)0 + i)
 
 // Auto-Verification Code
 const int frameCheckNumber = 4;
@@ -55,6 +55,8 @@ int *pArgc = NULL;
 char **pArgv = NULL;
 
 #define REFRESH_DELAY     10 //ms
+
+//Handy function displaying GPU CUDA info
 void displayCUDAInfo() {
 	const int kb = 1024;
 	const int mb = kb * kb;
@@ -120,8 +122,11 @@ void displayFunc(void) {
 
 	checkCudaErrors(CUDA_Bind2TextureArray());
 
+	//////////////////////////////////////////////////////////////////////////////
+	//Run the kernel!
 	cuda_rayCasting(d_dst, imageW, imageH, Camera(), light, loader.faceCount,loader.vertexCount,loader.normalCount,d_faces,d_vertices,d_normals);
 	getLastCudaError("Raycasting kernel execution failed.\n");
+	//////////////////////////////////////////////////////////////////////////////
 
 	checkCudaErrors(CUDA_UnbindTexture());
 	// DEPRECATED: checkCudaErrors(cudaGLUnmapBufferObject(gl_PBO));
@@ -178,6 +183,7 @@ void shutDown(unsigned char k, int /*x*/, int /*y*/) {
 
 		exit(EXIT_SUCCESS);
 		break;
+	//Light manipulation
 	case 'a':
 		light.position = Vector3(light.position.x - 0.4f, light.position.y,
 				light.position.z);
@@ -337,14 +343,16 @@ int main(int argc, char **argv) {
 
 	initOpenGLBuffers();
 
-	if (loader.parseOBJ("data/box.obj")) {
+	//Let's parse our object!
+	if (loader.parseOBJ("data/cylinder2.obj")) {
+		//Allocating arrays for our data
 		checkCudaErrors(cudaMalloc(&d_faces, sizeof(float) * loader.faceCount*6));
 		checkCudaErrors(
 				cudaMalloc(&d_normals, sizeof(float) * loader.normalCount*3));
 		checkCudaErrors(
 				cudaMalloc(&d_vertices,
 						sizeof(float) * loader.vertexCount*3));
-
+		//Copying data to device
 		checkCudaErrors(
 				cudaMemcpy(d_faces, loader.triangles_arr,
 						loader.faceCount * sizeof(float)*6,
