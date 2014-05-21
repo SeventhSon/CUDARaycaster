@@ -43,7 +43,7 @@ StopWatchInterface *timer = NULL;
 const int frameN = 24;
 int frameCounter = 0;
 
-//#define BUFFER_DATA(i) ((char *)0 + i)
+#define BUFFER_DATA(i) ((char *)0 + i)
 
 // Auto-Verification Code
 const int frameCheckNumber = 4;
@@ -105,7 +105,7 @@ void runRaycasting(TColor *d_dst) {
 	switch (g_Kernel) {
 	case 0:
 		//printf("%d %d %d\n",loader.faceCount,loader.vertexCount,loader.normalCount);
-		//cuda_rayCasting(d_dst, imageW, imageH, Camera(), light, loader.faceCount,loader.vertexCount,loader.normalCount,d_faces,d_vertices,d_normals);
+		cuda_rayCasting(d_dst, imageW, imageH, Camera(), light, loader.faceCount,loader.vertexCount,loader.normalCount,d_faces,d_vertices,d_normals);
 		break;
 	}
 
@@ -347,12 +347,14 @@ int main(int argc, char **argv) {
 
 	initOpenGLBuffers();
 
-	if (loader.parseOBJ("/home/samba/wesolowskit/Downloads/teapot.obj")) {
+	/*
+	if (loader.parseOBJ("/home/guru/teapot.obj")) {
 		checkCudaErrors(cudaMalloc(&d_faces, sizeof(float) * loader.faceCount*6));
 		checkCudaErrors(
 				cudaMalloc(&d_normals, sizeof(float) * loader.normalCount*3));
 		checkCudaErrors(
-				cudaMalloc(&d_vertices, sizeof(float) * loader.vertexCount*3));
+				cudaMalloc(&d_vertices,
+						sizeof(float) * loader.vertexCount*3));
 
 		checkCudaErrors(
 				cudaMemcpy(d_faces, loader.triangles_arr,
@@ -367,7 +369,7 @@ int main(int argc, char **argv) {
 						loader.vertexCount * sizeof(float)*3,
 						cudaMemcpyHostToDevice));
 	} else
-		exit(EXIT_FAILURE);
+		exit(EXIT_FAILURE);*/
 
 	printf("Starting GLUT main loop...\n");
 

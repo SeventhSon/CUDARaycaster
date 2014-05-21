@@ -52,7 +52,7 @@ bool objLoader::parseOBJ(const char* path) {
 
 	vertexCount = vertices.size();
 	int j = 0;
-	for (int i = 0; i < vertexCount*3; i += 3) {
+	for (int i = 0; i < vertexCount * 3; i += 3) {
 		vertices_arr[i] = vertices[j].x;
 		vertices_arr[i + 1] = vertices[j].y;
 		vertices_arr[i + 2] = vertices[j].z;
@@ -60,20 +60,19 @@ bool objLoader::parseOBJ(const char* path) {
 	}
 
 	normalCount = normals.size();
-	j=0;
-	for (int i = 0; i < normalCount*3; i += 3) {
+	j = 0;
+	for (int i = 0; i < normalCount * 3; i += 3) {
 		normals_arr[i] = normals[j].x;
 		normals_arr[i + 1] = normals[j].y;
 		normals_arr[i + 2] = normals[j].z;
-		printf("%f %f %f\n",normals_arr[i],normals_arr[i+1],normals_arr[i+2]);
+		//printf("%f %f %f\n", normals_arr[i], normals_arr[i + 1],
+		//		normals_arr[i + 2]);
 		j++;
 	}
-	//for(int i=0;normalCount*3;i++)
-	//	printf("%f\n",normals_arr[i]);
 
 	faceCount = triangles.size();
-	j=0;
-	for (int i = 0; i < faceCount*6; i += 6) {
+	j = 0;
+	for (int i = 0; i < faceCount * 6; i += 6) {
 		triangles_arr[i] = triangles[j].v1;
 		triangles_arr[i + 1] = triangles[j].v2;
 		triangles_arr[i + 2] = triangles[j].v3;

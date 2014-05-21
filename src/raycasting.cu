@@ -66,7 +66,7 @@ CUDA_CALLABLE_MEMBER const Vector2 Vector2::direction() const {
 	float length = sqrtf((this->x * this->x) + (this->y * this->y));
 	return Vector2(this->x / length, this->y / length);
 }
-CUDA_CALLABLE_MEMBER float Vector2::length() const{
+CUDA_CALLABLE_MEMBER float Vector2::length() const {
 	return sqrtf((this->x * this->x) + (this->y * this->y));
 }
 
@@ -85,7 +85,7 @@ CUDA_CALLABLE_MEMBER const Vector3 Vector3::operator+(const Vector3& q) const {
 CUDA_CALLABLE_MEMBER const Vector3 Vector3::operator-(const Vector3& q) const {
 	return (Vector3(this->x - q.x, this->y - q.y, this->z - q.z));
 }
-CUDA_CALLABLE_MEMBER const Vector3 Vector3::operator-() const{
+CUDA_CALLABLE_MEMBER const Vector3 Vector3::operator-() const {
 	return Vector3(-(this->x), -(this->y), -(this->z));
 }
 
@@ -95,16 +95,18 @@ CUDA_CALLABLE_MEMBER const Vector3 Vector3::direction() const {
 	return Vector3(this->x / length, this->y / length, this->z / length);
 }
 
-CUDA_CALLABLE_MEMBER float Vector3::dot(const Vector3& q) const{
-	return this->x*q.x+this->y*q.y+this->z*q.z;
+CUDA_CALLABLE_MEMBER float Vector3::dot(const Vector3& q) const {
+	return this->x * q.x + this->y * q.y + this->z * q.z;
 }
 
-CUDA_CALLABLE_MEMBER const Vector3 Vector3::cross(const Vector3& q) const{
-	return Vector3(this->y*q.z - this->z*q.y,this->z*q.x-this->x*q.z,this->x*q.y-this->y*q.x);
+CUDA_CALLABLE_MEMBER const Vector3 Vector3::cross(const Vector3& q) const {
+	return Vector3(this->y * q.z - this->z * q.y, this->z * q.x - this->x * q.z,
+			this->x * q.y - this->y * q.x);
 }
 
-CUDA_CALLABLE_MEMBER float Vector3::length() const{
-	return sqrtf((this->x * this->x) + (this->y * this->y) + (this->z * this->z));
+CUDA_CALLABLE_MEMBER float Vector3::length() const {
+	return sqrtf(
+			(this->x * this->x) + (this->y * this->y) + (this->z * this->z));
 }
 
 CUDA_CALLABLE_MEMBER const Vector3& Ray::origin() const {
@@ -126,26 +128,29 @@ CUDA_CALLABLE_MEMBER const BSDF& Triangle::bsdf() const {
 	return m_bsdf;
 }
 
-CUDA_CALLABLE_MEMBER const Color3 Color3::operator*(const float &q) const{
-	return Color3(min(this->r*q,1.0f),min(this->g*q,1.0f),min(this->b*q,1.0f));
+CUDA_CALLABLE_MEMBER const Color3 Color3::operator*(const float &q) const {
+	return Color3(min(this->r * q, 1.0f), min(this->g * q, 1.0f),
+			min(this->b * q, 1.0f));
 }
 
-CUDA_CALLABLE_MEMBER const Color3 Color3::operator*(const Color3 &q) const{
-	return Color3(this->r*q.r,this->g*q.g,this->b*q.b);
+CUDA_CALLABLE_MEMBER const Color3 Color3::operator*(const Color3 &q) const {
+	return Color3(this->r * q.r, this->g * q.g, this->b * q.b);
 }
 
-CUDA_CALLABLE_MEMBER const Color3 Color3::operator/(const float &q) const{
-	return Color3(this->r/q,this->g/q,this->b/q);
+CUDA_CALLABLE_MEMBER const Color3 Color3::operator/(const float &q) const {
+	return Color3(this->r / q, this->g / q, this->b / q);
 }
 
-CUDA_CALLABLE_MEMBER const Color3 Color3::operator+(const Color3 &q) const{
-	return Color3(this->r+q.r,this->g+q.g,this->b+q.b);
+CUDA_CALLABLE_MEMBER const Color3 Color3::operator+(const Color3 &q) const {
+	return Color3(this->r + q.r, this->g + q.g, this->b + q.b);
 }
 
-CUDA_CALLABLE_MEMBER Color3 BSDF::evaluateFiniteScatteringDensity(const Vector3& w_i,const Vector3& w_o, const Vector3& n) const {
-		const Vector3& w_h = (w_i + w_o).direction();
-		//return k_L/PI;
-		return (k_L + k_G * ((s + 8.0f) * powf(max(0.0f, w_h.dot(n)), s) / 8.0f)) /PI;
+CUDA_CALLABLE_MEMBER Color3 BSDF::evaluateFiniteScatteringDensity(
+		const Vector3& w_i, const Vector3& w_o, const Vector3& n) const {
+	const Vector3& w_h = (w_i + w_o).direction();
+	//return k_L/PI;
+	return (k_L + k_G * ((s + 8.0f) * powf(max(0.0f, w_h.dot(n)), s) / 8.0f))
+			/ PI;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -192,15 +197,17 @@ __device__ float intersect(const Ray& R, const Triangle& T, float weight[3]) {
 		return dist;
 	}
 }
-__device__ void shade(const Triangle& T, const Vector3& P,const Vector3& n, const Vector3& w_o, Radiance3& L_o, Light& light) {
+__device__ void shade(const Triangle& T, const Vector3& P, const Vector3& n,
+		const Vector3& w_o, Radiance3& L_o, Light& light) {
 
 	const Vector3& offset = light.position - P;
 	const float distanceToLight = offset.length();
 	const Vector3& w_i = offset / distanceToLight;
-	L_o = light.power / (2 * PI * distanceToLight*distanceToLight);
+	L_o = light.power / (2 * PI * distanceToLight * distanceToLight);
 
 	// Scatter the light
-	L_o = L_o*T.bsdf().evaluateFiniteScatteringDensity(w_i, w_o,n) * max(0.0, w_i.dot(n));
+	L_o = L_o * T.bsdf().evaluateFiniteScatteringDensity(w_i, w_o, n)
+			* max(0.0, w_i.dot(n));
 }
 
 __device__ bool sampleRayTriangle(const Ray& R, const Triangle& T,
@@ -218,15 +225,15 @@ __device__ bool sampleRayTriangle(const Ray& R, const Triangle& T,
 			+ T.normal(2) * weight[2]).direction();
 	const Vector3& w_o = -R.direction();
 
-	shade(T, P, n, w_o, radiance,light);
+	shade(T, P, n, w_o, radiance, light);
 
 	// Debugging barycentric
 	//radiance = Radiance3(weight[0], weight[1], weight[2])*0.14f;
 
 	return true;
 }
-__device__ Vector3 getVector(int i, float* data){
-	return Vector3(data[i],data[i+1],data[i+2]);
+__device__ Vector3 getVector(int i, float* data) {
+	return Vector3(data[i], data[i + 1], data[i + 2]);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -243,33 +250,40 @@ __global__ void Clear(TColor *dst, int imageW, int imageH) {
 
 extern __shared__ float sharedData[];
 
-__global__ void rayCast(TColor *dst, int imageW, int imageH,
-		Camera camera, Light light, unsigned int faceCount, unsigned int vertexCount, unsigned int normalCount,float* d_faces,float* d_vertices, float*d_normals) {
+__global__ void rayCast(TColor *dst, int imageW, int imageH, Camera camera,
+		Light light, unsigned int faceCount, unsigned int vertexCount,
+		unsigned int normalCount, float* d_faces, float* d_vertices,
+		float*d_normals) {
 	const int ix = blockDim.x * blockIdx.x + threadIdx.x;
 	const int iy = blockDim.y * blockIdx.y + threadIdx.y;
+	const int threads = blockDim.x*blockDim.y;
 
-	float* sh_vertices = (float*)&sharedData;
-	float* sh_normals = (float*)&sh_vertices[vertexCount*3];
-	float* sh_faces = (float*)&sh_normals[normalCount*3];
+	float* sh_vertices = (float*) &sharedData;
+	float* sh_normals = (float*) &sh_vertices[vertexCount * 3];
+	float* sh_faces = (float*) &sh_normals[normalCount * 3];
 
-	if (threadIdx.x < warpSize){
-		for(int i = threadIdx.x; i < vertexCount*3; i += warpSize){
-			sh_vertices[i] = d_vertices[i];
-			printf("%d\n",d_vertices[i]);
-		}
-		for(int i = threadIdx.x+vertexCount; i < normalCount*3; i += warpSize)
-			sh_normals[i] = d_normals[i];
-		for(int i = threadIdx.x; i  <faceCount*6; i += warpSize)
-			sh_faces[i] = d_faces[i];
-	}
+	for (int i = threadIdx.x; i < vertexCount * 3; i += threads)
+		sh_vertices[i] = d_vertices[i];
+	for (int i = threadIdx.x; i < normalCount * 3; i += threads)
+		sh_normals[i] = d_normals[i];
+	for (int i = threadIdx.x; i < faceCount * 6; i += threads)
+		sh_faces[i] = d_faces[i];
+
 	__syncthreads();
 
 	Radiance3 L_o;
 	const Ray& R = computeEyeRay(ix + 0.5f, iy + 0.5f, imageW, imageH, camera);
 	float distance = INFINITY;
-	for (unsigned int t = 0; t < faceCount*6; t+=6) {
-		const Triangle& T = Triangle(getVector(sh_faces[t],sh_vertices),getVector(sh_faces[t+1],sh_vertices),getVector(sh_faces[t+2],sh_vertices),getVector(sh_faces[t+3],sh_normals),getVector(sh_faces[t+4],sh_normals),getVector(sh_faces[t+5],sh_normals),BSDF(Color3(0.4f, 0.1f, 0.8f),Color3(0.1f, 0.1f, 0.1f), 20.0f));
-		if (sampleRayTriangle(R, T, L_o, distance,light)) {
+	for (unsigned int t = 0; t < faceCount * 6; t += 6) {
+		const Triangle& T = Triangle(getVector(sh_faces[t], sh_vertices),
+				getVector(sh_faces[t + 1], sh_vertices),
+				getVector(sh_faces[t + 2], sh_vertices),
+				getVector(sh_faces[t + 3], sh_normals),
+				getVector(sh_faces[t + 4], sh_normals),
+				getVector(sh_faces[t + 5], sh_normals),
+				BSDF(Color3(0.4f, 0.1f, 0.8f), Color3(0.1f, 0.1f, 0.1f),
+						20.0f));
+		if (sampleRayTriangle(R, T, L_o, distance, light)) {
 			if (ix < imageW && iy < imageH) {
 				dst[imageW * iy + ix] = make_color(L_o.r, L_o.g, L_o.b, 1.0);
 			}
@@ -311,10 +325,16 @@ extern "C" void cuda_Clear(TColor *d_dst, int imageW, int imageH) {
 }
 
 extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
-		Camera camera, Light light,unsigned int faceCount, unsigned int vertexCount, unsigned int normalCount,float* d_faces,float* d_vertices, float*d_normals) {
+		Camera camera, Light light, unsigned int faceCount,
+		unsigned int vertexCount, unsigned int normalCount, float* d_faces,
+		float* d_vertices, float*d_normals) {
 	dim3 threads(BLOCKDIM_X, BLOCKDIM_Y);
 	dim3 grid(iDivUp(imageW, BLOCKDIM_X), iDivUp(imageH, BLOCKDIM_Y));
 
-	printf("MEm needed %d",((vertexCount*3+normalCount*3+faceCount*6)*sizeof(float)));
-	rayCast<<<grid, threads, ((vertexCount*3+normalCount*3+faceCount*6)*sizeof(float))>>>(d_dst, imageW,imageH, camera, light, faceCount, vertexCount, normalCount, d_faces, d_vertices, d_normals);
+	printf("MEm needed %d",
+			((vertexCount * 3 + normalCount * 3 + faceCount * 6) * sizeof(float)));
+	rayCast<<<grid, threads,
+			((vertexCount * 3 + normalCount * 3 + faceCount * 6) * sizeof(float))>>>(
+			d_dst, imageW, imageH, camera, light, faceCount, vertexCount,
+			normalCount, d_faces, d_vertices, d_normals);
 }
