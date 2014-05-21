@@ -24,7 +24,7 @@ GLuint gl_PBO, gl_Tex;
 struct cudaGraphicsResource *cuda_pbo_resource; // handles OpenGL-CUDA exchange
 //Source image on the host side
 uchar4 *h_Src;
-int imageW = 1366, imageH = 768;
+int imageW = 64, imageH = 64;
 GLuint shader;
 
 //Host side scene
@@ -101,17 +101,6 @@ void computeFPS() {
 	}
 }
 
-void runRaycasting(TColor *d_dst) {
-	switch (g_Kernel) {
-	case 0:
-		//printf("%d %d %d\n",loader.faceCount,loader.vertexCount,loader.normalCount);
-		cuda_rayCasting(d_dst, imageW, imageH, Camera(), light, loader.faceCount,loader.vertexCount,loader.normalCount,d_faces,d_vertices,d_normals);
-		break;
-	}
-
-	getLastCudaError("Raycasting kernel execution failed.\n");
-}
-
 void displayFunc(void) {
 	sdkStartTimer(&timer);
 	TColor *d_dst = NULL;
@@ -131,7 +120,8 @@ void displayFunc(void) {
 
 	checkCudaErrors(CUDA_Bind2TextureArray());
 
-	runRaycasting(d_dst);
+	cuda_rayCasting(d_dst, imageW, imageH, Camera(), light, loader.faceCount,loader.vertexCount,loader.normalCount,d_faces,d_vertices,d_normals);
+	getLastCudaError("Raycasting kernel execution failed.\n");
 
 	checkCudaErrors(CUDA_UnbindTexture());
 	// DEPRECATED: checkCudaErrors(cudaGLUnmapBufferObject(gl_PBO));
@@ -347,7 +337,6 @@ int main(int argc, char **argv) {
 
 	initOpenGLBuffers();
 
-	/*
 	if (loader.parseOBJ("/home/guru/teapot.obj")) {
 		checkCudaErrors(cudaMalloc(&d_faces, sizeof(float) * loader.faceCount*6));
 		checkCudaErrors(
@@ -369,7 +358,7 @@ int main(int argc, char **argv) {
 						loader.vertexCount * sizeof(float)*3,
 						cudaMemcpyHostToDevice));
 	} else
-		exit(EXIT_FAILURE);*/
+		exit(EXIT_FAILURE);
 
 	printf("Starting GLUT main loop...\n");
 
