@@ -21,8 +21,8 @@ public:
 	CUDA_CALLABLE_MEMBER Vector3() :
 			x(0.0f),y(0.0f),z(0.0f){
 	}
-	CUDA_CALLABLE_MEMBER Vector3(float xx, float yy, float zz) :
-			y(yy), x(xx), z(zz) {
+	CUDA_CALLABLE_MEMBER Vector3(float x, float y, float z) :
+			y(y), x(x), z(z) {
 	}
 	CUDA_CALLABLE_MEMBER const Vector3 operator*(const float q) const;
 	CUDA_CALLABLE_MEMBER const Vector3 operator+(const Vector3& q) const;
@@ -37,8 +37,8 @@ class Vector2 {
 public:
 	float x, y;
 
-	CUDA_CALLABLE_MEMBER Vector2(float xx, float yy) :
-			y(yy), x(xx) {
+	CUDA_CALLABLE_MEMBER Vector2(float x, float y) :
+			y(y), x(x) {
 	}
 	CUDA_CALLABLE_MEMBER const Vector2 operator*(const float &q) const;
 	CUDA_CALLABLE_MEMBER const Vector2 operator+(const Vector2& q) const;
@@ -77,14 +77,16 @@ class Triangle {
 private:
 	Vector3 m_vertex[3];
 	Vector3 m_normal[3];
+	Color3 m_color;
 public:
-	CUDA_CALLABLE_MEMBER Triangle(const Vector3& v1,const Vector3& v2, const Vector3& v3, const Vector3& n1, const Vector3& n2, const Vector3& n3){
+	CUDA_CALLABLE_MEMBER Triangle(const Vector3& v1,const Vector3& v2, const Vector3& v3, const Vector3& n1, const Vector3& n2, const Vector3& n3, const Color3& color){
 		m_vertex[0]=v1;
 		m_vertex[1]=v2;
 		m_vertex[2]=v3;
 		m_normal[0]=n1;
 		m_normal[1]=n2;
 		m_normal[2]=n3;
+		m_color = color;
 	}
 	CUDA_CALLABLE_MEMBER const Vector3& vertex(int i) const;
 	CUDA_CALLABLE_MEMBER const Vector3& normal(int i) const;
@@ -93,8 +95,11 @@ public:
 
 class Light {
 public:
-	float3 position;
-	TColor color;
+	Vector3 position;
+	Color3 color;
+	CUDA_CALLABLE_MEMBER Light(const Vector3& position, const Color3& color) :
+			position(position), color(color){
+	}
 };
 
 class Camera {
@@ -105,13 +110,6 @@ public:
 	CUDA_CALLABLE_MEMBER Camera() :
 			zNear(-0.1f), zFar(-100.0f), fieldOfViewX(PI / 2.0f) {
 	}
-};
-
-class Scene {
-	Triangle* triangles;
-	Light* lights;
-	unsigned int triangleCount;
-	unsigned int lightCount;
 };
 
 

@@ -23,8 +23,12 @@ GLuint gl_PBO, gl_Tex;
 struct cudaGraphicsResource *cuda_pbo_resource; // handles OpenGL-CUDA exchange
 //Source image on the host side
 uchar4 *h_Src;
-int imageW = 1024, imageH = 768;
+int imageW = 800, imageH = 600;
 GLuint shader;
+
+//Host side scene
+Triangle *h_triangles, *d_triangles;
+int triangleCount = 1;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Main program
@@ -98,7 +102,9 @@ void computeFPS() {
 void runRaycasting(TColor *d_dst) {
 	switch (g_Kernel) {
 	case 0:
-		cuda_rayCasting(d_dst, imageW, imageH,Camera(),1,0);
+		cuda_rayCasting(d_dst, imageW, imageH, Camera(),
+				Light(Vector3(1.0f, 3.0f, 1.0f), Color3(10.0, 10.0, 10.0)),
+				triangleCount, d_triangles);
 		break;
 	}
 
@@ -304,6 +310,16 @@ int main(int argc, char **argv) {
 	checkCudaErrors(CUDA_MallocArray(&h_Src, imageW, imageH));
 
 	initOpenGLBuffers();
+
+	h_triangles = (Triangle*) malloc(sizeof(Triangle) * triangleCount);
+	h_triangles[0] = Triangle(Vector3(0, 1, -2), Vector3(-1.9, -1, -2),
+			Vector3(1.6, -0.5, -2), Vector3(0, 0.6f, 1).direction(),
+			Vector3(-0.4f, -0.4f, 1.0f).direction(),
+			Vector3(0.4f, -0.4f, 1.0f).direction(), Color3(1.0f, 0.1f, 0.2f));
+	checkCudaErrors(cudaMalloc(&d_triangles, sizeof(Triangle) * triangleCount));
+	checkCudaErrors(
+			cudaMemcpy(d_triangles, h_triangles,
+					triangleCount * sizeof(Triangle), cudaMemcpyHostToDevice));
 
 	printf("Starting GLUT main loop...\n");
 
