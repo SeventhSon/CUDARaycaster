@@ -24,15 +24,12 @@ GLuint gl_PBO, gl_Tex;
 struct cudaGraphicsResource *cuda_pbo_resource; // handles OpenGL-CUDA exchange
 //Source image on the host side
 uchar4 *h_Src;
-int imageW = 800, imageH = 600;
+int imageW = 1366, imageH = 768;
 GLuint shader;
 
 //Host side scene
-Triangle *h_triangles, *d_triangles;
-int triangleCount = 1;
 objLoader loader;
-Face *d_faces;
-float *d_normals, *d_vertices;
+float *d_normals, *d_vertices, *d_faces;
 Light light(Vector3(1.0f, 1.0f, 1.0f), Power3(80.0, 80.0, 80.0));
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -107,7 +104,7 @@ void computeFPS() {
 void runRaycasting(TColor *d_dst) {
 	switch (g_Kernel) {
 	case 0:
-		cuda_rayCasting(d_dst, imageW, imageH, Camera(), light, loader.faceCount,loader.vertexCount,loader.normalCount,d_faces,d_vertices,d_normals);
+		//cuda_rayCasting(d_dst, imageW, imageH, Camera(), light, loader.faceCount,loader.vertexCount,loader.normalCount,d_faces,d_vertices,d_normals);
 		break;
 	}
 
@@ -349,24 +346,24 @@ int main(int argc, char **argv) {
 
 	initOpenGLBuffers();
 
-	if (loader.parseOBJ("/home/guru/teapot.obj")) {
-		checkCudaErrors(cudaMalloc(&d_faces, sizeof(Face) * loader.faceCount));
+	if (loader.parseOBJ("/home/samba/wesolowskit/Downloads/teapot.obj")) {
+		checkCudaErrors(cudaMalloc(&d_faces, sizeof(float) * loader.faceCount*6));
 		checkCudaErrors(
-				cudaMalloc(&d_normals, sizeof(float) * loader.normalCount));
+				cudaMalloc(&d_normals, sizeof(float) * loader.normalCount*3));
 		checkCudaErrors(
-				cudaMalloc(&d_vertices, sizeof(float) * loader.vertexCount));
+				cudaMalloc(&d_vertices, sizeof(float) * loader.vertexCount*3));
 
 		checkCudaErrors(
-				cudaMemcpy(d_faces, loader.faces_arr,
-						loader.faceCount * sizeof(Face),
+				cudaMemcpy(d_faces, loader.triangles_arr,
+						loader.faceCount * sizeof(float)*6,
 						cudaMemcpyHostToDevice));
 		checkCudaErrors(
 				cudaMemcpy(d_normals, loader.normals_arr,
-						loader.normalCount * sizeof(float),
+						loader.normalCount * sizeof(float)*3,
 						cudaMemcpyHostToDevice));
 		checkCudaErrors(
 				cudaMemcpy(d_vertices, loader.vertices_arr,
-						loader.vertexCount * sizeof(float),
+						loader.vertexCount * sizeof(float)*3,
 						cudaMemcpyHostToDevice));
 	} else
 		exit(EXIT_FAILURE);

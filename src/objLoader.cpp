@@ -5,7 +5,7 @@
 #include <cstdlib>
 #include "utility.cuh"
 bool objLoader::parseOBJ(const char* path) {
-	std::vector<Face> faces;
+	std::vector<Face> triangles;
 	std::vector<Vector3> normals;
 	std::vector<Vector3> vertices;
 	FILE* file = fopen(path, "r");
@@ -37,40 +37,47 @@ bool objLoader::parseOBJ(const char* path) {
 				printf("File not supported\n");
 				return false;
 			}
-			faces.push_back(
+			triangles.push_back(
 					Face(vertexIndex[0], vertexIndex[1], vertexIndex[2],
-							normalIndex[0], normalIndex[1], normalIndex[2],
-							BSDF(Color3(0.4f, 0.1f, 0.8f),
-									Color3(0.1f, 0.1f, 0.1f), 20.0f)));
+							normalIndex[0], normalIndex[1], normalIndex[2]));
 			printf("Face v%d %d %d n%d %d %d\n", vertexIndex[0], vertexIndex[1],
 					vertexIndex[2], normalIndex[0], normalIndex[1],
 					normalIndex[2]);
 		}
 	}
 	printf("Successfully parsed %s\n Creating arrays for transport!\n", path);
-	faces_arr = (Face*) malloc(sizeof(Face) * faces.size());
+	triangles_arr = (float*) malloc(sizeof(float) * triangles.size() * 6);
 	vertices_arr = (float*) malloc(sizeof(float) * vertices.size() * 3);
 	normals_arr = (float*) malloc(sizeof(float) * normals.size() * 3);
 
 	vertexCount = vertices.size();
-	for (int i = 0; i < vertexCount; i += 3) {
-		vertices_arr[i] = vertices[i].x;
-		vertices_arr[i + 1] = vertices[i].y;
-		vertices_arr[i + 2] = vertices[i].z;
+	int j = 0;
+	for (int i = 0; i < vertexCount*3; i += 3) {
+		vertices_arr[i] = vertices[j].x;
+		vertices_arr[i + 1] = vertices[j].y;
+		vertices_arr[i + 2] = vertices[j].z;
+		j++;
 	}
 
 	normalCount = normals.size();
-	for (int i = 0; i < normalCount; i += 3) {
-		normals_arr[i] = normals[i].x;
-		normals_arr[i + 1] = normals[i].y;
-		normals_arr[i + 2] = normals[i].z;
+	j=0;
+	for (int i = 0; i < normalCount*3; i += 3) {
+		normals_arr[i] = normals[j].x;
+		normals_arr[i + 1] = normals[j].y;
+		normals_arr[i + 2] = normals[j].z;
+		j++;
 	}
 
-	faceCount = faces.size();
-	for (int i = 0; i < faceCount; i += 3) {
-		faces_arr[i] = faces[i];
-		faces_arr[i + 1] = faces[i];
-		faces_arr[i + 2] = faces[i];
+	faceCount = triangles.size();
+	j=0;
+	for (int i = 0; i < faceCount*6; i += 6) {
+		triangles_arr[i] = triangles[j].v1;
+		triangles_arr[i + 1] = triangles[j].v2;
+		triangles_arr[i + 2] = triangles[j].v3;
+		triangles_arr[i + 3] = triangles[j].n1;
+		triangles_arr[i + 4] = triangles[j].n2;
+		triangles_arr[i + 5] = triangles[j].n3;
+		j++;
 	}
 	return true;
 }

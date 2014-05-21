@@ -41,20 +41,22 @@ endif
 # Add inputs and outputs from these tool invocations to the build variables 
 
 # All Target
-all: CudaRaycaster
+all: CUDARaycaster secondary-outputs
 
 # Tool invocations
-CudaRaycaster: $(OBJS) $(USER_OBJS)
+CUDARaycaster: $(OBJS) $(USER_OBJS)
 	@echo 'Building target: $@'
 	@echo 'Invoking: NVCC Linker'
-	/opt/cuda/bin/nvcc --cudart static -L"/opt/cuda/samples/common/lib/linux/x86_64" -link -o  "CudaRaycaster" $(OBJS) $(USER_OBJS) $(LIBS)
+	/opt/cuda/bin/nvcc --cudart static -L"/opt/cuda/samples/common/lib/linux/x86_64" -m64 -link -o  "CUDARaycaster" $(OBJS) $(USER_OBJS) $(LIBS)
 	@echo 'Finished building target: $@'
 	@echo ' '
 
 # Other Targets
 clean:
-	-$(RM) $(CU_DEPS)$(OBJS)$(C++_DEPS)$(C_DEPS)$(CC_DEPS)$(CPP_DEPS)$(EXECUTABLES)$(CXX_DEPS)$(C_UPPER_DEPS) CudaRaycaster
+	-$(RM) $(CU_DEPS)$(OBJS)$(C++_DEPS)$(C_DEPS)$(CC_DEPS)$(CPP_DEPS)$(EXECUTABLES)$(CXX_DEPS)$(C_UPPER_DEPS) CUDARaycaster
 	-@echo ' '
+
+secondary-outputs: $(CUBINS)
 
 .PHONY: all clean dependents
 .SECONDARY:
