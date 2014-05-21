@@ -262,11 +262,11 @@ __global__ void rayCast(TColor *dst, int imageW, int imageH, Camera camera,
 	float* sh_normals = (float*) &sh_vertices[vertexCount * 3];
 	float* sh_faces = (float*) &sh_normals[normalCount * 3];
 
-	for (int i = threadIdx.x; i < vertexCount * 3; i += threads)
+	for (int i = threadIdx.x+threadIdx.y*blockDim.x; i < vertexCount * 3; i += threads)
 		sh_vertices[i] = d_vertices[i];
-	for (int i = threadIdx.x; i < normalCount * 3; i += threads)
+	for (int i = threadIdx.x+threadIdx.y*blockDim.x; i < normalCount * 3; i += threads)
 		sh_normals[i] = d_normals[i];
-	for (int i = threadIdx.x; i < faceCount * 6; i += threads)
+	for (int i = threadIdx.x+threadIdx.y*blockDim.x; i < faceCount * 6; i += threads)
 		sh_faces[i] = d_faces[i];
 
 	__syncthreads();
@@ -275,13 +275,13 @@ __global__ void rayCast(TColor *dst, int imageW, int imageH, Camera camera,
 	const Ray& R = computeEyeRay(ix + 0.5f, iy + 0.5f, imageW, imageH, camera);
 	float distance = INFINITY;
 	for (unsigned int t = 0; t < faceCount * 6; t += 6) {
-		const Triangle& T = Triangle(getVector(sh_faces[t], sh_vertices),
-				getVector(sh_faces[t + 1], sh_vertices),
-				getVector(sh_faces[t + 2], sh_vertices),
-				getVector(sh_faces[t + 3], sh_normals),
-				getVector(sh_faces[t + 4], sh_normals),
-				getVector(sh_faces[t + 5], sh_normals),
-				BSDF(Color3(0.4f, 0.1f, 0.8f), Color3(0.1f, 0.1f, 0.1f),
+		const Triangle& T = Triangle(getVector(sh_faces[t]*3, sh_vertices),
+				getVector(sh_faces[t + 1]*3, sh_vertices),
+				getVector(sh_faces[t + 2]*3, sh_vertices),
+				getVector(sh_faces[t + 3]*3, sh_normals),
+				getVector(sh_faces[t + 4]*3, sh_normals),
+				getVector(sh_faces[t + 5]*3, sh_normals),
+				BSDF(Color3(0.2f, 0.1f, 0.8f), Color3(0.1f, 0.1f, 0.1f),
 						20.0f));
 		if (sampleRayTriangle(R, T, L_o, distance, light)) {
 			if (ix < imageW && iy < imageH) {
@@ -331,8 +331,8 @@ extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
 	dim3 threads(BLOCKDIM_X, BLOCKDIM_Y);
 	dim3 grid(iDivUp(imageW, BLOCKDIM_X), iDivUp(imageH, BLOCKDIM_Y));
 
-	printf("MEm needed %d",
-			((vertexCount * 3 + normalCount * 3 + faceCount * 6) * sizeof(float)));
+	//printf("MEm needed %d",
+	//		((vertexCount * 3 + normalCount * 3 + faceCount * 6) * sizeof(float)));
 	rayCast<<<grid, threads,
 			((vertexCount * 3 + normalCount * 3 + faceCount * 6) * sizeof(float))>>>(
 			d_dst, imageW, imageH, camera, light, faceCount, vertexCount,

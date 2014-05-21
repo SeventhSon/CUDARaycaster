@@ -24,13 +24,13 @@ GLuint gl_PBO, gl_Tex;
 struct cudaGraphicsResource *cuda_pbo_resource; // handles OpenGL-CUDA exchange
 //Source image on the host side
 uchar4 *h_Src;
-int imageW = 64, imageH = 64;
+int imageW = 800, imageH = 600;
 GLuint shader;
 
 //Host side scene
 objLoader loader;
 float *d_normals, *d_vertices, *d_faces;
-Light light(Vector3(1.0f, 1.0f, 1.0f), Power3(80.0, 80.0, 80.0));
+Light light(Vector3(1.0f, 1.0f, 1.0f), Power3(200.0, 200.0, 200.0));
 
 ////////////////////////////////////////////////////////////////////////////////
 // Main program
@@ -337,7 +337,7 @@ int main(int argc, char **argv) {
 
 	initOpenGLBuffers();
 
-	if (loader.parseOBJ("/home/guru/teapot.obj")) {
+	if (loader.parseOBJ("/home/guru/cylinder.obj")) {
 		checkCudaErrors(cudaMalloc(&d_faces, sizeof(float) * loader.faceCount*6));
 		checkCudaErrors(
 				cudaMalloc(&d_normals, sizeof(float) * loader.normalCount*3));
