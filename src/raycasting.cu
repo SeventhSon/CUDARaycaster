@@ -275,12 +275,12 @@ __global__ void rayCast(TColor *dst, int imageW, int imageH, Camera camera,
 	const Ray& R = computeEyeRay(ix + 0.5f, iy + 0.5f, imageW, imageH, camera);
 	float distance = INFINITY;
 	for (unsigned int t = 0; t < faceCount * 6; t += 6) {
-		const Triangle& T = Triangle(getVector(sh_faces[t]*3, sh_vertices),
-				getVector(sh_faces[t + 1]*3, sh_vertices),
-				getVector(sh_faces[t + 2]*3, sh_vertices),
-				getVector(sh_faces[t + 3]*3, sh_normals),
-				getVector(sh_faces[t + 4]*3, sh_normals),
-				getVector(sh_faces[t + 5]*3, sh_normals),
+		const Triangle& T = Triangle(getVector((sh_faces[t]-1)*3, sh_vertices),
+				getVector((sh_faces[t + 1]-1)*3, sh_vertices),
+				getVector((sh_faces[t + 2]-1)*3, sh_vertices),
+				getVector((sh_faces[t + 3]-1)*3, sh_normals),
+				getVector((sh_faces[t + 4]-1)*3, sh_normals),
+				getVector((sh_faces[t + 5]-1)*3, sh_normals),
 				BSDF(Color3(0.2f, 0.1f, 0.8f), Color3(0.1f, 0.1f, 0.1f),
 						20.0f));
 		if (sampleRayTriangle(R, T, L_o, distance, light)) {

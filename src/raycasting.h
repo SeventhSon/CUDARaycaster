@@ -3,8 +3,8 @@
 
 typedef unsigned int TColor;
 
-#define BLOCKDIM_X 8
-#define BLOCKDIM_Y 8
+#define BLOCKDIM_X 16
+#define BLOCKDIM_Y 16
 
 #ifndef MAX
 #define MAX(a,b) ((a < b) ? b : a)

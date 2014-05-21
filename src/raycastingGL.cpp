@@ -337,7 +337,7 @@ int main(int argc, char **argv) {
 
 	initOpenGLBuffers();
 
-	if (loader.parseOBJ("/home/guru/cylinder.obj")) {
+	if (loader.parseOBJ("data/box.obj")) {
 		checkCudaErrors(cudaMalloc(&d_faces, sizeof(float) * loader.faceCount*6));
 		checkCudaErrors(
 				cudaMalloc(&d_normals, sizeof(float) * loader.normalCount*3));
