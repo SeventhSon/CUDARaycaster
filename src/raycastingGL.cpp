@@ -103,7 +103,7 @@ void runRaycasting(TColor *d_dst) {
 	switch (g_Kernel) {
 	case 0:
 		cuda_rayCasting(d_dst, imageW, imageH, Camera(),
-				Light(Vector3(1.0f, 3.0f, 1.0f), Color3(10.0, 10.0, 10.0)),
+				Light(Vector3(9.0f, -9.0f, 2.0f), Power3(6.0, 6.0, 6.0)),
 				triangleCount, d_triangles);
 		break;
 	}
@@ -293,7 +293,7 @@ void cleanup() {
 
 int main(int argc, char **argv) {
 	char *dump_file = NULL;
-	int clearColorbit = 255 << 24 | 255 << 16 | 255 << 8 | 255;
+	int clearColorbit = 255 << 24 | 0 << 16 | 0 << 8 | 0;
 
 	pArgc = &argc;
 	pArgv = argv;
@@ -312,10 +312,10 @@ int main(int argc, char **argv) {
 	initOpenGLBuffers();
 
 	h_triangles = (Triangle*) malloc(sizeof(Triangle) * triangleCount);
-	h_triangles[0] = Triangle(Vector3(0, 1, -2), Vector3(-1.9, -1, -2),
-			Vector3(1.6, -0.5, -2), Vector3(0, 0.6f, 1).direction(),
+	h_triangles[0] = Triangle(Vector3(1.6, 0.5, -2),Vector3(-1.9, 1, -2),
+			Vector3(0, -1, -2), Vector3(0, 0.6f, 1).direction(),
 			Vector3(-0.4f, -0.4f, 1.0f).direction(),
-			Vector3(0.4f, -0.4f, 1.0f).direction(), Color3(1.0f, 0.1f, 0.2f));
+			Vector3(0.4f, -0.4f, 1.0f).direction(), BSDF(Color3(0.0f, 0.0f, 0.8f),Color3(0.2f,0.2f,0.2f),100.0f));
 	checkCudaErrors(cudaMalloc(&d_triangles, sizeof(Triangle) * triangleCount));
 	checkCudaErrors(
 			cudaMemcpy(d_triangles, h_triangles,

@@ -47,7 +47,11 @@ cudaArray *a_Src;
 //Raycasting Classes' functions
 ////////////////////////////////////////////////////////////////////////////////
 CUDA_CALLABLE_MEMBER const Vector2 Vector2::operator*(const float &q) const {
-	return (Vector2(this->x * 3, this->y * 3));
+	return (Vector2(this->x * q, this->y * q));
+}
+
+CUDA_CALLABLE_MEMBER const Vector2 Vector2::operator/(const float &q) const {
+	return (Vector2(this->x / q, this->y / q));
 }
 
 CUDA_CALLABLE_MEMBER const Vector2 Vector2::operator+(const Vector2& q) const {
@@ -62,9 +66,16 @@ CUDA_CALLABLE_MEMBER const Vector2 Vector2::direction() const {
 	float length = sqrtf((this->x * this->x) + (this->y * this->y));
 	return Vector2(this->x / length, this->y / length);
 }
+CUDA_CALLABLE_MEMBER float Vector2::length() const{
+	return sqrtf((this->x * this->x) + (this->y * this->y));
+}
 
 CUDA_CALLABLE_MEMBER const Vector3 Vector3::operator*(const float q) const {
 	return (Vector3(this->x * q, this->y * q, this->z * q));
+}
+
+CUDA_CALLABLE_MEMBER const Vector3 Vector3::operator/(const float &q) const {
+	return (Vector3(this->x / q, this->y / q, this->z / q));
 }
 
 CUDA_CALLABLE_MEMBER const Vector3 Vector3::operator+(const Vector3& q) const {
@@ -92,6 +103,10 @@ CUDA_CALLABLE_MEMBER const Vector3 Vector3::cross(const Vector3& q) const{
 	return Vector3(this->y*q.z - this->z*q.y,this->z*q.x-this->x*q.z,this->x*q.y-this->y*q.x);
 }
 
+CUDA_CALLABLE_MEMBER float Vector3::length() const{
+	return sqrtf((this->x * this->x) + (this->y * this->y) + (this->z * this->z));
+}
+
 CUDA_CALLABLE_MEMBER const Vector3& Ray::origin() const {
 	return m_origin;
 }
@@ -105,6 +120,32 @@ CUDA_CALLABLE_MEMBER const Vector3& Triangle::vertex(int i) const {
 
 CUDA_CALLABLE_MEMBER const Vector3& Triangle::normal(int i) const {
 	return m_normal[i];
+}
+
+CUDA_CALLABLE_MEMBER const BSDF& Triangle::bsdf() const {
+	return m_bsdf;
+}
+
+CUDA_CALLABLE_MEMBER const Color3 Color3::operator*(const float &q) const{
+	return Color3(min(this->r*q,1.0f),min(this->g*q,1.0f),min(this->b*q,1.0f));
+}
+
+CUDA_CALLABLE_MEMBER const Color3 Color3::operator*(const Color3 &q) const{
+	return Color3(this->r*q.r,this->g*q.g,this->b*q.b);
+}
+
+CUDA_CALLABLE_MEMBER const Color3 Color3::operator/(const float &q) const{
+	return Color3(this->r/q,this->g/q,this->b/q);
+}
+
+CUDA_CALLABLE_MEMBER const Color3 Color3::operator+(const Color3 &q) const{
+	return Color3(this->r+q.r,this->g+q.g,this->b+q.b);
+}
+
+CUDA_CALLABLE_MEMBER Color3 BSDF::evaluateFiniteScatteringDensity(const Vector3& w_i,const Vector3& w_o, const Vector3& n) const {
+		const Vector3& w_h = (w_i + w_o).direction();
+		return k_L/PI;
+		//return (k_L + k_G * ((s + 8.0f) * powf(max(0.0f, w_h.dot(n)), s) / 8.0f)) /PI;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -151,6 +192,16 @@ __device__ float intersect(const Ray& R, const Triangle& T, float weight[3]) {
 		return dist;
 	}
 }
+__device__ void shade(const Triangle& T, const Vector3& P,const Vector3& n, const Vector3& w_o, Radiance3& L_o, Light& light) {
+
+	const Vector3& offset = light.position - P;
+	const float distanceToLight = offset.length();
+	const Vector3& w_i = offset / distanceToLight;
+	L_o = light.power;// / (4 * PI * distanceToLight*distanceToLight);
+
+	// Scatter the light
+	L_o = L_o*T.bsdf().evaluateFiniteScatteringDensity(w_i, w_o,n) * max(0.0, w_i.dot(n));
+}
 
 __device__ bool sampleRayTriangle(const Ray& R, const Triangle& T,
 		Radiance3& radiance, float& distance, Light& light) {
@@ -167,13 +218,10 @@ __device__ bool sampleRayTriangle(const Ray& R, const Triangle& T,
 			+ T.normal(2) * weight[2]).direction();
 	const Vector3& w_o = -R.direction();
 
-	//shade(light, T, P, n, w_o, radiance);
-
-	// Debugging intersect: set to white on any intersection
-	//radiance = Radiance3(0.2f, 0.6f, 1.0f);
+	shade(T, P, n, w_o, radiance,light);
 
 	// Debugging barycentric
-	radiance = Radiance3(weight[0], weight[1], weight[2]);
+	//radiance = Radiance3(weight[0], weight[1], weight[2])*0.14f;
 
 	return true;
 }
@@ -197,11 +245,9 @@ __global__ void rayCast(TColor *dst, int imageW, int imageH,
 
 	extern __shared__ Triangle triangles[];
 
-	if (threadIdx.x < warpSize) {
-		for(int i = threadIdx.x; i  <triangleCount; i += warpSize) {
+	if (threadIdx.x < warpSize)
+		for(int i = threadIdx.x; i  <triangleCount; i += warpSize)
 			triangles[i] = d_triangles[i];
-		}
-	}
 	__syncthreads();
 
 	Radiance3 L_o;
