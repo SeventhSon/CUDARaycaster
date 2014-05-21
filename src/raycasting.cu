@@ -318,10 +318,10 @@ extern "C" void cuda_Clear(TColor *d_dst, int imageW, int imageH) {
 }
 
 extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
-		Camera camera, Light light, unsigned int triangleCount, Triangle* d_triangles,unsigned int faceCount, unsigned int vertexCount, unsigned int normalCount,Face* d_faces,float* d_vertices, float*d_normals) {
+		Camera camera, Light light,unsigned int faceCount, unsigned int vertexCount, unsigned int normalCount,Face* d_faces,float* d_vertices, float*d_normals) {
 	dim3 threads(BLOCKDIM_X, BLOCKDIM_Y);
 	dim3 grid(iDivUp(imageW, BLOCKDIM_X), iDivUp(imageH, BLOCKDIM_Y));
 
-	rayCast<<<grid, threads, (vertexCount*3+normalCount*3)*sizeof(float) sizeof(Triangle)>>>(d_dst, imageW,
-			imageH, camera, light, unsigned int faceCount, unsigned int vertexCount, unsigned int normalCount,Face* d_faces,float* d_vertices, float*d_normals);
+	printf("MEm needed %d",((vertexCount*3+normalCount*3)*sizeof(float)+faceCount*sizeof(Face)));
+	rayCast<<<grid, threads, ((vertexCount*3+normalCount*3)*sizeof(float)+faceCount*sizeof(Face))>>>(d_dst, imageW,imageH, camera, light, faceCount, vertexCount, normalCount, d_faces, d_vertices, d_normals);
 }

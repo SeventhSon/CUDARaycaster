@@ -23,7 +23,6 @@ extern "C" cudaError_t CUDA_FreeArray();
 // CUDA kernel functions
 extern "C" void cuda_Clear(TColor *d_dst, int imageW, int imageH);
 extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
-		Camera camera, Light light, unsigned int triangleCount,
-		Triangle* d_triangles);
+		Camera camera, Light light, unsigned int faceCount, unsigned int vertexCount, unsigned int normalCount,Face* d_faces,float* d_vertices, float*d_normals);
 
 #endif

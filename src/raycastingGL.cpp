@@ -30,6 +30,7 @@ GLuint shader;
 //Host side scene
 Triangle *h_triangles, *d_triangles;
 int triangleCount = 1;
+objLoader loader;
 Face *d_faces;
 float *d_normals, *d_vertices;
 Light light(Vector3(1.0f, 1.0f, 1.0f), Power3(80.0, 80.0, 80.0));
@@ -106,8 +107,7 @@ void computeFPS() {
 void runRaycasting(TColor *d_dst) {
 	switch (g_Kernel) {
 	case 0:
-		cuda_rayCasting(d_dst, imageW, imageH, Camera(), light, triangleCount,
-				d_triangles);
+		cuda_rayCasting(d_dst, imageW, imageH, Camera(), light, loader.faceCount,loader.vertexCount,loader.normalCount,d_faces,d_vertices,d_normals);
 		break;
 	}
 
@@ -332,7 +332,6 @@ void cleanup() {
 int main(int argc, char **argv) {
 	char *dump_file = NULL;
 	int clearColorbit = 255 << 24 | 0 << 16 | 0 << 8 | 0;
-	objLoader loader;
 
 	pArgc = &argc;
 	pArgv = argv;
