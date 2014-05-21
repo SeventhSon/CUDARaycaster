@@ -29,6 +29,7 @@ GLuint shader;
 //Host side scene
 Triangle *h_triangles, *d_triangles;
 int triangleCount = 1;
+Light light(Vector3(1.0f, 1.0f, 1.0f), Power3(80.0, 80.0, 80.0));
 
 ////////////////////////////////////////////////////////////////////////////////
 // Main program
@@ -102,9 +103,8 @@ void computeFPS() {
 void runRaycasting(TColor *d_dst) {
 	switch (g_Kernel) {
 	case 0:
-		cuda_rayCasting(d_dst, imageW, imageH, Camera(),
-				Light(Vector3(9.0f, -9.0f, 2.0f), Power3(6.0, 6.0, 6.0)),
-				triangleCount, d_triangles);
+		cuda_rayCasting(d_dst, imageW, imageH, Camera(), light, triangleCount,
+				d_triangles);
 		break;
 	}
 
@@ -176,7 +176,6 @@ void timerEvent(int value) {
 void shutDown(unsigned char k, int /*x*/, int /*y*/) {
 	switch (k) {
 	case '\033':
-	case 'q':
 	case 'Q':
 		printf("Shutting down...\n");
 
@@ -187,6 +186,36 @@ void shutDown(unsigned char k, int /*x*/, int /*y*/) {
 		free(h_Src);
 
 		exit(EXIT_SUCCESS);
+		break;
+	case 'a':
+		light.position = Vector3(light.position.x - 0.4f, light.position.y,
+				light.position.z);
+		printf("Light (%f, %f, %f)\n",light.position.x,light.position.y,light.position.z);
+		break;
+	case 'd':
+		light.position = Vector3(light.position.x + 0.4f, light.position.y,
+				light.position.z);
+		printf("Light (%f, %f, %f)\n",light.position.x,light.position.y,light.position.z);
+		break;
+	case 'w':
+		light.position = Vector3(light.position.x, light.position.y - 0.4f,
+				light.position.z);
+		printf("Light (%f, %f, %f)\n",light.position.x,light.position.y,light.position.z);
+		break;
+	case 's':
+		light.position = Vector3(light.position.x, light.position.y + 0.4f,
+				light.position.z);
+		printf("Light (%f, %f, %f)\n",light.position.x,light.position.y,light.position.z);
+		break;
+	case 'q':
+		light.position = Vector3(light.position.x, light.position.y,
+				light.position.z-0.4f);
+		printf("Light (%f, %f, %f)\n",light.position.x,light.position.y,light.position.z);
+		break;
+	case 'e':
+		light.position = Vector3(light.position.x, light.position.y,
+				light.position.z+0.4f);
+		printf("Light (%f, %f, %f)\n",light.position.x,light.position.y,light.position.z);
 		break;
 	}
 }
@@ -312,10 +341,11 @@ int main(int argc, char **argv) {
 	initOpenGLBuffers();
 
 	h_triangles = (Triangle*) malloc(sizeof(Triangle) * triangleCount);
-	h_triangles[0] = Triangle(Vector3(1.6, 0.5, -2),Vector3(-1.9, 1, -2),
+	h_triangles[0] = Triangle(Vector3(1.6, 0.5, -2), Vector3(-1.9, 1, -2),
 			Vector3(0, -1, -2), Vector3(0, 0.6f, 1).direction(),
 			Vector3(-0.4f, -0.4f, 1.0f).direction(),
-			Vector3(0.4f, -0.4f, 1.0f).direction(), BSDF(Color3(0.0f, 0.0f, 0.8f),Color3(0.2f,0.2f,0.2f),100.0f));
+			Vector3(0.4f, -0.4f, 1.0f).direction(),
+			BSDF(Color3(0.4f, 0.1f, 0.8f), Color3(0.1f, 0.1f, 0.1f), 20.0f));
 	checkCudaErrors(cudaMalloc(&d_triangles, sizeof(Triangle) * triangleCount));
 	checkCudaErrors(
 			cudaMemcpy(d_triangles, h_triangles,

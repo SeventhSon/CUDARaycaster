@@ -144,8 +144,8 @@ CUDA_CALLABLE_MEMBER const Color3 Color3::operator+(const Color3 &q) const{
 
 CUDA_CALLABLE_MEMBER Color3 BSDF::evaluateFiniteScatteringDensity(const Vector3& w_i,const Vector3& w_o, const Vector3& n) const {
 		const Vector3& w_h = (w_i + w_o).direction();
-		return k_L/PI;
-		//return (k_L + k_G * ((s + 8.0f) * powf(max(0.0f, w_h.dot(n)), s) / 8.0f)) /PI;
+		//return k_L/PI;
+		return (k_L + k_G * ((s + 8.0f) * powf(max(0.0f, w_h.dot(n)), s) / 8.0f)) /PI;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -197,7 +197,7 @@ __device__ void shade(const Triangle& T, const Vector3& P,const Vector3& n, cons
 	const Vector3& offset = light.position - P;
 	const float distanceToLight = offset.length();
 	const Vector3& w_i = offset / distanceToLight;
-	L_o = light.power;// / (4 * PI * distanceToLight*distanceToLight);
+	L_o = light.power / (2 * PI * distanceToLight*distanceToLight);
 
 	// Scatter the light
 	L_o = L_o*T.bsdf().evaluateFiniteScatteringDensity(w_i, w_o,n) * max(0.0, w_i.dot(n));
