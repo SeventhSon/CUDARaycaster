@@ -104,6 +104,7 @@ void computeFPS() {
 void runRaycasting(TColor *d_dst) {
 	switch (g_Kernel) {
 	case 0:
+		//printf("%d %d %d\n",loader.faceCount,loader.vertexCount,loader.normalCount);
 		//cuda_rayCasting(d_dst, imageW, imageH, Camera(), light, loader.faceCount,loader.vertexCount,loader.normalCount,d_faces,d_vertices,d_normals);
 		break;
 	}

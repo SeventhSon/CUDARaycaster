@@ -22,12 +22,12 @@ bool objLoader::parseOBJ(const char* path) {
 			Vector3 vertex;
 			fscanf(file, "%f %f %f\n", &vertex.x, &vertex.y, &vertex.z);
 			vertices.push_back(vertex);
-			printf("Vertex %f %f %f\n", vertex.x, vertex.y, vertex.z);
+			//printf("Vertex %f %f %f\n", vertex.x, vertex.y, vertex.z);
 		} else if (strcmp(lineHeader, "vn") == 0) {
 			Vector3 normal;
 			fscanf(file, "%f %f %f\n", &normal.x, &normal.y, &normal.z);
 			normals.push_back(normal);
-			printf("Normal %f %f %f\n", normal.x, normal.y, normal.z);
+			//printf("Normal %f %f %f\n", normal.x, normal.y, normal.z);
 		} else if (strcmp(lineHeader, "f") == 0) {
 			unsigned int vertexIndex[3], normalIndex[3];
 			int matches = fscanf(file, "%d//%d %d//%d %d//%d\n",
@@ -40,12 +40,12 @@ bool objLoader::parseOBJ(const char* path) {
 			triangles.push_back(
 					Face(vertexIndex[0], vertexIndex[1], vertexIndex[2],
 							normalIndex[0], normalIndex[1], normalIndex[2]));
-			printf("Face v%d %d %d n%d %d %d\n", vertexIndex[0], vertexIndex[1],
-					vertexIndex[2], normalIndex[0], normalIndex[1],
-					normalIndex[2]);
+			//printf("Face v%d %d %d n%d %d %d\n", vertexIndex[0], vertexIndex[1],
+			//		vertexIndex[2], normalIndex[0], normalIndex[1],
+			//		normalIndex[2]);
 		}
 	}
-	printf("Successfully parsed %s\n Creating arrays for transport!\n", path);
+	printf("Successfully parsed %s\nCreating arrays for transport!\n", path);
 	triangles_arr = (float*) malloc(sizeof(float) * triangles.size() * 6);
 	vertices_arr = (float*) malloc(sizeof(float) * vertices.size() * 3);
 	normals_arr = (float*) malloc(sizeof(float) * normals.size() * 3);
@@ -65,8 +65,11 @@ bool objLoader::parseOBJ(const char* path) {
 		normals_arr[i] = normals[j].x;
 		normals_arr[i + 1] = normals[j].y;
 		normals_arr[i + 2] = normals[j].z;
+		printf("%f %f %f\n",normals_arr[i],normals_arr[i+1],normals_arr[i+2]);
 		j++;
 	}
+	//for(int i=0;normalCount*3;i++)
+	//	printf("%f\n",normals_arr[i]);
 
 	faceCount = triangles.size();
 	j=0;

@@ -255,12 +255,12 @@ __global__ void rayCast(TColor *dst, int imageW, int imageH,
 	if (threadIdx.x < warpSize){
 		for(int i = threadIdx.x; i < vertexCount*3; i += warpSize){
 			sh_vertices[i] = d_vertices[i];
-			printf("%d",d_vertices[i]);
+			printf("%d\n",d_vertices[i]);
 		}
-		//for(int i = threadIdx.x+vertexCount; i < normalCount*3; i += warpSize)
-		//	sh_normals[i] = d_normals[i];
-		//for(int i = threadIdx.x; i  <faceCount*6; i += warpSize)
-		//	sh_faces[i] = d_faces[i];
+		for(int i = threadIdx.x+vertexCount; i < normalCount*3; i += warpSize)
+			sh_normals[i] = d_normals[i];
+		for(int i = threadIdx.x; i  <faceCount*6; i += warpSize)
+			sh_faces[i] = d_faces[i];
 	}
 	__syncthreads();
 
