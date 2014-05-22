@@ -29,7 +29,8 @@ GLuint shader;
 
 //Host side scene definition arrays
 objLoader loader;
-float *d_normals, *d_vertices, *d_faces;
+float *d_normals, *d_vertices;
+unsigned int *d_faces;
 Light light(Vector3(1.0f, 1.0f, 1.0f), Power3(200.0, 200.0, 200.0));
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -344,9 +345,9 @@ int main(int argc, char **argv) {
 	initOpenGLBuffers();
 
 	//Let's parse our object!
-	if (loader.parseOBJ("data/cylinder2.obj")) {
+	if (loader.parseOBJ("data/suzzane.obj")) {
 		//Allocating arrays for our data
-		checkCudaErrors(cudaMalloc(&d_faces, sizeof(float) * loader.faceCount*6));
+		checkCudaErrors(cudaMalloc(&d_faces, sizeof(unsigned int) * loader.faceCount*6));
 		checkCudaErrors(
 				cudaMalloc(&d_normals, sizeof(float) * loader.normalCount*3));
 		checkCudaErrors(
@@ -355,7 +356,7 @@ int main(int argc, char **argv) {
 		//Copying data to device
 		checkCudaErrors(
 				cudaMemcpy(d_faces, loader.triangles_arr,
-						loader.faceCount * sizeof(float)*6,
+						loader.faceCount * sizeof(unsigned int)*6,
 						cudaMemcpyHostToDevice));
 		checkCudaErrors(
 				cudaMemcpy(d_normals, loader.normals_arr,

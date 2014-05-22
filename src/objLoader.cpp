@@ -46,7 +46,7 @@ bool objLoader::parseOBJ(const char* path) {
 		}
 	}
 	printf("Successfully parsed %s\nCreating arrays for transport!\n", path);
-	triangles_arr = (float*) malloc(sizeof(float) * triangles.size() * 6);
+	triangles_arr = (unsigned int*) malloc(sizeof(unsigned int) * triangles.size() * 6);
 	vertices_arr = (float*) malloc(sizeof(float) * vertices.size() * 3);
 	normals_arr = (float*) malloc(sizeof(float) * normals.size() * 3);
 

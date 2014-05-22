@@ -3,6 +3,7 @@
 #include <string.h>
 #include "raycasting.h"
 
+#define ALIGN 4
 ////////////////////////////////////////////////////////////////////////////////
 // Helper functions
 ////////////////////////////////////////////////////////////////////////////////
@@ -245,7 +246,7 @@ __device__ bool sampleRayTriangle(const Ray& R, const Triangle& T,
 
 	return true;
 }
-__device__ Vector3 getVector(int i, float* data) {
+__device__ Vector3 getVector(unsigned int i, float* data) {
 	return Vector3(data[i], data[i + 1], data[i + 2]);
 }
 
@@ -258,7 +259,7 @@ extern __shared__ float sharedData[];
 
 __global__ void rayCast(TColor *dst, int imageW, int imageH, Camera camera,
 		Light light, unsigned int faceCount, unsigned int vertexCount,
-		unsigned int normalCount, float* d_faces, float* d_vertices,
+		unsigned int normalCount, unsigned int* d_faces, float* d_vertices,
 		float*d_normals) {
 	//Global x, y image coordinates
 	const int ix = blockDim.x * blockIdx.x + threadIdx.x;
@@ -270,8 +271,8 @@ __global__ void rayCast(TColor *dst, int imageW, int imageH, Camera camera,
 
 	//Define sharedMemory array handlers for conviniece
 	float* sh_vertices = (float*) &sharedData;
-	float* sh_normals = (float*) &sh_vertices[vertexCount * 3];
-	float* sh_faces = (float*) &sh_normals[normalCount * 3];
+	float* sh_normals = (float*) &sh_vertices[vertexCount * 3 + ALIGN - (vertexCount * 3)  % ALIGN];
+	unsigned int* sh_faces = (unsigned int*) &sh_normals[normalCount * 3 + ALIGN - (normalCount * 3)  % ALIGN];
 
 	//Loading triangle data to sharedMemory
 	for (int i = serialId; i < vertexCount * 3; i += threads)
@@ -341,15 +342,23 @@ extern "C" cudaError_t CUDA_FreeArray() {
 
 extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
 		Camera camera, Light light, unsigned int faceCount,
-		unsigned int vertexCount, unsigned int normalCount, float* d_faces,
+		unsigned int vertexCount, unsigned int normalCount, unsigned int* d_faces,
 		float* d_vertices, float*d_normals) {
 	dim3 threads(BLOCKDIM_X, BLOCKDIM_Y);
 	dim3 grid(iDivUp(imageW, BLOCKDIM_X), iDivUp(imageH, BLOCKDIM_Y));
 
 	//printf("MEm needed %d\n",
 	//		((vertexCount * 3 + normalCount * 3 + faceCount * 6) * sizeof(float)));
+	unsigned int aligned_v_count = vertexCount * 3;
+	unsigned int aligned_n_count = normalCount * 3;
+	unsigned int aligned_f_count = faceCount * 6;
+	aligned_f_count += ALIGN - aligned_f_count % ALIGN;
+	aligned_v_count += ALIGN - aligned_v_count % ALIGN;
+	aligned_n_count += ALIGN - aligned_n_count % ALIGN;
+	printf("v %d n %d f %d\n",aligned_v_count,aligned_n_count,aligned_f_count);
 	rayCast<<<grid, threads,
-			((vertexCount * 3 + normalCount * 3 + faceCount * 6) * sizeof(float))>>>(
+			(aligned_f_count * sizeof(int)
+					+ (aligned_v_count + aligned_n_count) * sizeof(float))>>>(
 			d_dst, imageW, imageH, camera, light, faceCount, vertexCount,
 			normalCount, d_faces, d_vertices, d_normals);
 }

@@ -13,7 +13,7 @@
 // OBJ reader
 class objLoader {
 public:
-	float *triangles_arr;
+	unsigned int *triangles_arr;
 	float *normals_arr;
 	float *vertices_arr;
 	unsigned int vertexCount, faceCount, normalCount;
@@ -22,8 +22,8 @@ public:
 
 class Face{
 public:
-	int v1,v2,v3,n1,n2,n3;
-	Face(int v1, int v2, int v3, int n1, int n2, int n3):v1(v1),v2(v2),v3(v3),n1(n1),n2(n2),n3(n3){
+	unsigned int v1,v2,v3,n1,n2,n3;
+	Face(unsigned int v1, unsigned int v2, unsigned int v3, unsigned int n1, unsigned int n2, unsigned int n3):v1(v1),v2(v2),v3(v3),n1(n1),n2(n2),n3(n3){
 
 	}
 };
