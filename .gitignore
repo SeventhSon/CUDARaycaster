@@ -1,5 +1,5 @@
-/Debug
-/Release
+Debug/
+Release/
 # Compiled Object files
 *.slo
 *.lo
@@ -20,3 +20,6 @@
 *.exe
 *.out
 *.app
+
+.project
+.cproject
