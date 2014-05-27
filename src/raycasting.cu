@@ -284,6 +284,7 @@ __global__ void rayCast(TColor *dst, int imageW, int imageH, Camera camera,
 	//Wait for everyone to be ready
 	__syncthreads();
 
+	Triangle T;
 	//Color of our pixel
 	Radiance3 L_o;
 	//Ray from camera (right now fixed to 0,0,0) to near plane
@@ -296,7 +297,7 @@ __global__ void rayCast(TColor *dst, int imageW, int imageH, Camera camera,
 		//Each vertex and normal is composed of 3 floats (x,y,z) and reside in their
 		//respective arrays sh_vertices, sh_normals, use getVector to grab data
 		//(This shouldn't be creating new Triangle for each face...)
-		const Triangle& T = Triangle(
+		T.load(
 				getVector((sh_faces[t] - 1) * 3, sh_vertices),
 				getVector((sh_faces[t + 1] - 1) * 3, sh_vertices),
 				getVector((sh_faces[t + 2] - 1) * 3, sh_vertices),
