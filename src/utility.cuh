@@ -143,14 +143,21 @@ public:
 };
 
 class Camera {
+private:
+	Vector3 position;
+	Vector3 direction;
+	Vector3 up;
+	Vector3 right;
+	float fieldOfView;
 public:
-	float zNear;
-	float zFar;
-	float fieldOfViewX;
-	CUDA_CALLABLE_MEMBER Camera() :
-			zNear(-0.1f), zFar(-100.0f), fieldOfViewX(PI / 2.0f) {
-	}
-};
+	CUDA_CALLABLE_MEMBER Camera(float fieldOfView, const Vector3& position) :
+			fieldOfView(1.0f),position(position){
 
+	}
+	CUDA_CALLABLE_MEMBER void setPosition(const Vector3& position);
+	CUDA_CALLABLE_MEMBER void lookAt(const Vector3& point,const Vector3& up);
+	CUDA_CALLABLE_MEMBER Ray computeEyeRay(
+			float x, float y, int width, int height);
+};
 
 #endif /* UTILITY_CUH_ */

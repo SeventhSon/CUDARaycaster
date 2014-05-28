@@ -31,7 +31,7 @@ GLuint shader;
 objLoader loader;
 float *d_normals, *d_vertices;
 unsigned int *d_faces;
-Light light(Vector3(1.0f, 1.0f, 1.0f), Power3(200.0, 200.0, 200.0));
+Light light(Vector3(1.0f, 1.0f, 1.0f), Power3(80.0, 80.0, 80.0));
 
 ////////////////////////////////////////////////////////////////////////////////
 // Main program
@@ -125,7 +125,10 @@ void displayFunc(void) {
 
 	//////////////////////////////////////////////////////////////////////////////
 	//Run the kernel!
-	cuda_rayCasting(d_dst, imageW, imageH, Camera(), light, loader.faceCount,loader.vertexCount,loader.normalCount,d_faces,d_vertices,d_normals);
+	Camera cam(PI/2,Vector3(0.0f,5.0f,8.0f));
+	//cam.setPosition(Vector3(0.0f,0.0f,8.0f));
+	cam.lookAt(Vector3(0.0f,0.0f,0.0f),Vector3(0.0f,1.0f,0.0f));
+	cuda_rayCasting(d_dst, imageW, imageH, cam, light, loader.faceCount,loader.vertexCount,loader.normalCount,d_faces,d_vertices,d_normals);
 	getLastCudaError("Raycasting kernel execution failed.\n");
 	//////////////////////////////////////////////////////////////////////////////
 
@@ -345,7 +348,7 @@ int main(int argc, char **argv) {
 	initOpenGLBuffers();
 
 	//Let's parse our object!
-	if (loader.parseOBJ("data/suzzane.obj")) {
+	if (loader.parseOBJ("data/cylinder.obj")) {
 		//Allocating arrays for our data
 		checkCudaErrors(cudaMalloc(&d_faces, sizeof(unsigned int) * loader.faceCount*6));
 		checkCudaErrors(

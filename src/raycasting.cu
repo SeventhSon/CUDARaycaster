@@ -19,15 +19,6 @@ int iDivUp(int a, int b) {
 	return ((a % b) != 0) ? (a / b + 1) : (a / b);
 }
 
-__device__ float lerpf(float a, float b, float c) {
-	return a + (b - a) * c;
-}
-
-__device__ float vecLen(float4 a, float4 b) {
-	return ((b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y)
-			+ (b.z - a.z) * (b.z - a.z));
-}
-
 __device__ TColor make_color(float r, float g, float b, float a) {
 	return ((int) (a * 255.0f) << 24) | ((int) (b * 255.0f) << 16)
 			| ((int) (g * 255.0f) << 8) | ((int) (r * 255.0f) << 0);
@@ -167,21 +158,30 @@ CUDA_CALLABLE_MEMBER Color3 BSDF::evaluateFiniteScatteringDensity(
 			/ PI;
 }
 
+CUDA_CALLABLE_MEMBER Ray Camera::computeEyeRay(float x, float y, int width,
+		int height) {
+	const float aspect = float(height) / width;
+
+	const float s = 1.0f * fieldOfView;
+	Vector3 image_point = right * (x / width - 0.5f)*s
+			+ up * (y / height - 0.5f)*aspect*s + position + direction;
+	Vector3 ray_direction = image_point - position;
+	return Ray(position, ray_direction.direction());
+}
+
+CUDA_CALLABLE_MEMBER void Camera::setPosition(const Vector3& position) {
+	this->position = position;
+}
+CUDA_CALLABLE_MEMBER void Camera::lookAt(const Vector3& point,
+		const Vector3& up) {
+	direction = (point - position).direction();
+	right = direction.cross(up).direction();
+	this->up = right.cross(direction).direction();
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 //Raycasting device functions
 ////////////////////////////////////////////////////////////////////////////////
-__device__ Ray computeEyeRay(float x, float y, int width, int height,
-		const Camera& camera) {
-	const float aspect = float(height) / width;
-
-	// Compute the side of a square at z = -1 based on our
-	// horizontal left-edge-to-right-edge field of view
-	//-2.0f* tan(camera.fieldOfViewX * 0.5f)
-	const float s = -2.0f;
-	const Vector3& start = Vector3((x / width - 0.5f) * s,
-			-(y / height - 0.5f) * s * aspect, 1.0f) * camera.zNear;
-	return Ray(start, start.direction());
-}
 
 __device__ float intersect(const Ray& R, const Triangle& T, float weight[3]) {
 	const Vector3& e1 = T.vertex(1) - T.vertex(0);
@@ -216,8 +216,9 @@ __device__ void shade(const Triangle& T, const Vector3& P, const Vector3& n,
 
 	const Vector3& offset = light.position - P;
 	const float distanceToLight = offset.length();
+	//Normalize the offset vector
 	const Vector3& w_i = offset / distanceToLight;
-	L_o = light.power / (2 * PI * distanceToLight * distanceToLight);
+	L_o = light.power / (distanceToLight * distanceToLight);
 
 	// Scatter the light
 	L_o = L_o * T.bsdf().evaluateFiniteScatteringDensity(w_i, w_o, n)
@@ -271,8 +272,10 @@ __global__ void rayCast(TColor *dst, int imageW, int imageH, Camera camera,
 
 	//Define sharedMemory array handlers for conviniece
 	float* sh_vertices = (float*) &sharedData;
-	float* sh_normals = (float*) &sh_vertices[vertexCount * 3 + ALIGN - (vertexCount * 3)  % ALIGN];
-	unsigned int* sh_faces = (unsigned int*) &sh_normals[normalCount * 3 + ALIGN - (normalCount * 3)  % ALIGN];
+	float* sh_normals = (float*) &sh_vertices[vertexCount * 3 + ALIGN
+			- (vertexCount * 3) % ALIGN];
+	unsigned int* sh_faces = (unsigned int*) &sh_normals[normalCount * 3 + ALIGN
+			- (normalCount * 3) % ALIGN];
 
 	//Loading triangle data to sharedMemory
 	for (int i = serialId; i < vertexCount * 3; i += threads)
@@ -287,8 +290,7 @@ __global__ void rayCast(TColor *dst, int imageW, int imageH, Camera camera,
 	Triangle T;
 	//Color of our pixel
 	Radiance3 L_o;
-	//Ray from camera (right now fixed to 0,0,0) to near plane
-	const Ray& R = computeEyeRay(ix + 0.5f, iy + 0.5f, imageW, imageH, camera);
+	const Ray& R = camera.computeEyeRay(ix + 0.5f, iy + 0.5f, imageW, imageH);
 	//Now find the closest triangle that intersects with our ray
 	float distance = INFINITY;
 	for (unsigned int t = 0; t < faceCount * 6; t += 6) {
@@ -296,16 +298,14 @@ __global__ void rayCast(TColor *dst, int imageW, int imageH, Camera camera,
 		//Each face is composed of 6 floats (3 vertex indices, 3 normal indices).
 		//Each vertex and normal is composed of 3 floats (x,y,z) and reside in their
 		//respective arrays sh_vertices, sh_normals, use getVector to grab data
-		//(This shouldn't be creating new Triangle for each face...)
-		T.load(
-				getVector((sh_faces[t] - 1) * 3, sh_vertices),
+		T.load(getVector((sh_faces[t] - 1) * 3, sh_vertices),
 				getVector((sh_faces[t + 1] - 1) * 3, sh_vertices),
 				getVector((sh_faces[t + 2] - 1) * 3, sh_vertices),
 				getVector((sh_faces[t + 3] - 1) * 3, sh_normals),
 				getVector((sh_faces[t + 4] - 1) * 3, sh_normals),
 				getVector((sh_faces[t + 5] - 1) * 3, sh_normals),
 				BSDF(Color3(0.2f, 0.1f, 0.8f), Color3(0.1f, 0.1f, 0.1f),
-						20.0f));
+						100.0f));
 		//Try this triangle and our ray
 		sampleRayTriangle(R, T, L_o, distance, light);
 	}
@@ -343,8 +343,8 @@ extern "C" cudaError_t CUDA_FreeArray() {
 
 extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
 		Camera camera, Light light, unsigned int faceCount,
-		unsigned int vertexCount, unsigned int normalCount, unsigned int* d_faces,
-		float* d_vertices, float*d_normals) {
+		unsigned int vertexCount, unsigned int normalCount,
+		unsigned int* d_faces, float* d_vertices, float*d_normals) {
 	dim3 threads(BLOCKDIM_X, BLOCKDIM_Y);
 	dim3 grid(iDivUp(imageW, BLOCKDIM_X), iDivUp(imageH, BLOCKDIM_Y));
 
@@ -356,7 +356,7 @@ extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
 	aligned_f_count += ALIGN - aligned_f_count % ALIGN;
 	aligned_v_count += ALIGN - aligned_v_count % ALIGN;
 	aligned_n_count += ALIGN - aligned_n_count % ALIGN;
-	printf("v %d n %d f %d\n",aligned_v_count,aligned_n_count,aligned_f_count);
+	//printf("v %d n %d f %d\n",aligned_v_count,aligned_n_count,aligned_f_count);
 	rayCast<<<grid, threads,
 			(aligned_f_count * sizeof(int)
 					+ (aligned_v_count + aligned_n_count) * sizeof(float))>>>(
