@@ -148,10 +148,12 @@ private:
 	Vector3 direction;
 	Vector3 up;
 	Vector3 right;
+	float aspect;
 	float fieldOfView;
+	float d;
 public:
-	CUDA_CALLABLE_MEMBER Camera(float fieldOfView, const Vector3& position) :
-			fieldOfView(1.0f),position(position){
+	CUDA_CALLABLE_MEMBER Camera(float height, float width,float d, const Vector3& position) :
+			fieldOfView(1.0f),position(position),aspect(height/width),d(d){
 
 	}
 	CUDA_CALLABLE_MEMBER void setPosition(const Vector3& position);

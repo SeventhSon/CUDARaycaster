@@ -12,7 +12,6 @@
 #include <string.h>
 #include "raycasting.h" //
 #include "objLoader.h" //simple OBJ model loader
-
 // includes, project
 #include <helper_functions.h> // includes for helper utility functions
 #include <helper_cuda.h>      // includes for cuda error checking and initialization
@@ -31,7 +30,10 @@ GLuint shader;
 objLoader loader;
 float *d_normals, *d_vertices;
 unsigned int *d_faces;
-Light light(Vector3(1.0f, 1.0f, 1.0f), Power3(80.0, 80.0, 80.0));
+Light light(Vector3(1.0f, 1.0f, 1.0f), Power3(180.0, 180.0, 180.0));
+Camera cam(imageW, imageH, 1.0f, Vector3(0.0f, 0.0f, 0.0f));
+bool R = true;
+float angle = 0, anglestep=0.01f;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Main program
@@ -56,7 +58,6 @@ int *pArgc = NULL;
 char **pArgv = NULL;
 
 #define REFRESH_DELAY     10 //ms
-
 //Handy function displaying GPU CUDA info
 void displayCUDAInfo() {
 	const int kb = 1024;
@@ -125,10 +126,15 @@ void displayFunc(void) {
 
 	//////////////////////////////////////////////////////////////////////////////
 	//Run the kernel!
-	Camera cam(PI/2,Vector3(0.0f,5.0f,8.0f));
-	//cam.setPosition(Vector3(0.0f,0.0f,8.0f));
-	cam.lookAt(Vector3(0.0f,0.0f,0.0f),Vector3(0.0f,1.0f,0.0f));
-	cuda_rayCasting(d_dst, imageW, imageH, cam, light, loader.faceCount,loader.vertexCount,loader.normalCount,d_faces,d_vertices,d_normals);
+
+	if (R) {
+		angle+=anglestep;
+		cam.setPosition(Vector3(cosf(angle)*8, 0.0f, sinf(angle)*8));
+		cam.lookAt(Vector3(0.0f, 0.0f, 0.0f), Vector3(0.0f, 1.0f, 0.0f));
+	}
+	cuda_rayCasting(d_dst, imageW, imageH, cam, light, loader.faceCount,
+			loader.vertexCount, loader.normalCount, d_faces, d_vertices,
+			d_normals);
 	getLastCudaError("Raycasting kernel execution failed.\n");
 	//////////////////////////////////////////////////////////////////////////////
 
@@ -187,7 +193,7 @@ void shutDown(unsigned char k, int /*x*/, int /*y*/) {
 
 		exit(EXIT_SUCCESS);
 		break;
-	//Light manipulation
+		//Light manipulation
 	case 'a':
 		light.position = Vector3(light.position.x - 0.4f, light.position.y,
 				light.position.z);
@@ -223,6 +229,21 @@ void shutDown(unsigned char k, int /*x*/, int /*y*/) {
 				light.position.z + 0.4f);
 		printf("Light (%f, %f, %f)\n", light.position.x, light.position.y,
 				light.position.z);
+		break;
+	case 'r':
+		if (R) {
+			R = false;
+			printf("Rotation OFF");
+		} else {
+			R = true;
+			printf("Rotation ON");
+		}
+		break;
+	case '+':
+		anglestep+=0.01;
+		break;
+	case '-':
+		anglestep-=0.01;
 		break;
 	}
 }
@@ -348,26 +369,28 @@ int main(int argc, char **argv) {
 	initOpenGLBuffers();
 
 	//Let's parse our object!
-	if (loader.parseOBJ("data/cylinder.obj")) {
+	if (loader.parseOBJ("data/spheres.obj")) {
 		//Allocating arrays for our data
-		checkCudaErrors(cudaMalloc(&d_faces, sizeof(unsigned int) * loader.faceCount*6));
 		checkCudaErrors(
-				cudaMalloc(&d_normals, sizeof(float) * loader.normalCount*3));
+				cudaMalloc(&d_faces,
+						sizeof(unsigned int) * loader.faceCount * 6));
+		checkCudaErrors(
+				cudaMalloc(&d_normals, sizeof(float) * loader.normalCount * 3));
 		checkCudaErrors(
 				cudaMalloc(&d_vertices,
-						sizeof(float) * loader.vertexCount*3));
+						sizeof(float) * loader.vertexCount * 3));
 		//Copying data to device
 		checkCudaErrors(
 				cudaMemcpy(d_faces, loader.triangles_arr,
-						loader.faceCount * sizeof(unsigned int)*6,
+						loader.faceCount * sizeof(unsigned int) * 6,
 						cudaMemcpyHostToDevice));
 		checkCudaErrors(
 				cudaMemcpy(d_normals, loader.normals_arr,
-						loader.normalCount * sizeof(float)*3,
+						loader.normalCount * sizeof(float) * 3,
 						cudaMemcpyHostToDevice));
 		checkCudaErrors(
 				cudaMemcpy(d_vertices, loader.vertices_arr,
-						loader.vertexCount * sizeof(float)*3,
+						loader.vertexCount * sizeof(float) * 3,
 						cudaMemcpyHostToDevice));
 	} else
 		exit(EXIT_FAILURE);

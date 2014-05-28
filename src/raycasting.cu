@@ -218,10 +218,9 @@ __device__ void shade(const Triangle& T, const Vector3& P, const Vector3& n,
 	const float distanceToLight = offset.length();
 	//Normalize the offset vector
 	const Vector3& w_i = offset / distanceToLight;
-	L_o = light.power / (distanceToLight * distanceToLight);
 
 	// Scatter the light
-	L_o = L_o * T.bsdf().evaluateFiniteScatteringDensity(w_i, w_o, n)
+	L_o = (light.power / (4*PI*distanceToLight * distanceToLight)) * T.bsdf().evaluateFiniteScatteringDensity(w_i, w_o, n)
 			* max(0.0, w_i.dot(n));
 }
 
@@ -289,7 +288,7 @@ __global__ void rayCast(TColor *dst, int imageW, int imageH, Camera camera,
 
 	Triangle T;
 	//Color of our pixel
-	Radiance3 L_o;
+	Radiance3 L_o(0.04f,0.04f,0.04f);
 	const Ray& R = camera.computeEyeRay(ix + 0.5f, iy + 0.5f, imageW, imageH);
 	//Now find the closest triangle that intersects with our ray
 	float distance = INFINITY;
@@ -304,7 +303,7 @@ __global__ void rayCast(TColor *dst, int imageW, int imageH, Camera camera,
 				getVector((sh_faces[t + 3] - 1) * 3, sh_normals),
 				getVector((sh_faces[t + 4] - 1) * 3, sh_normals),
 				getVector((sh_faces[t + 5] - 1) * 3, sh_normals),
-				BSDF(Color3(0.2f, 0.1f, 0.8f), Color3(0.1f, 0.1f, 0.1f),
+				BSDF(Color3(0.2f, 1.0f, 0.2f), Color3(0.2f, 0.2f, 0.2f),
 						100.0f));
 		//Try this triangle and our ray
 		sampleRayTriangle(R, T, L_o, distance, light);
