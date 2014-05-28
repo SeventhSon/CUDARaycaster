@@ -369,7 +369,7 @@ int main(int argc, char **argv) {
 	initOpenGLBuffers();
 
 	//Let's parse our object!
-	if (loader.parseOBJ("data/spheres.obj")) {
+	if (loader.parseOBJ("data/gourd.obj")) {
 		//Allocating arrays for our data
 		checkCudaErrors(
 				cudaMalloc(&d_faces,
