@@ -134,8 +134,7 @@ CUDA_CALLABLE_MEMBER const BSDF& Triangle::bsdf() const {
 // Color3
 ////////////////////////////////////////////////////////////////////////////////
 CUDA_CALLABLE_MEMBER const Color3 Color3::operator*(const float &q) const {
-	return Color3(min(this->r * q, 1.0f), min(this->g * q, 1.0f),
-			min(this->b * q, 1.0f));
+	return Color3(this->r * q, this->g * q,	this->b * q);
 }
 
 CUDA_CALLABLE_MEMBER const Color3 Color3::operator*(const Color3 &q) const {
@@ -153,7 +152,7 @@ CUDA_CALLABLE_MEMBER const Color3 Color3::operator+(const Color3 &q) const {
 CUDA_CALLABLE_MEMBER Color3 BSDF::evaluateFiniteScatteringDensity(
 		const Vector3& w_i, const Vector3& w_o, const Vector3& n) const {
 	const Vector3& w_h = (w_i + w_o).direction();
-	//return k_L/PI;
+	//return k_L / PI;
 	return (k_L + k_G * ((s + 8.0f) * powf(max(0.0f, w_h.dot(n)), s) / 8.0f))
 			/ PI;
 }
@@ -163,8 +162,8 @@ CUDA_CALLABLE_MEMBER Ray Camera::computeEyeRay(float x, float y, int width,
 	const float aspect = float(height) / width;
 
 	const float s = 1.0f * fieldOfView;
-	Vector3 image_point = right * (x / width - 0.5f)*s
-			+ up * (y / height - 0.5f)*aspect*s + position + direction;
+	Vector3 image_point = right * (x / width - 0.5f) * s
+			+ up * (y / height - 0.5f) * aspect * s + position + direction;
 	Vector3 ray_direction = image_point - position;
 	return Ray(position, ray_direction.direction());
 }
@@ -199,7 +198,7 @@ __device__ float intersect(const Ray& R, const Triangle& T, float weight[3]) {
 	const float dist = e2.dot(r) / a;
 	const float epsilon = 1e-7f;
 
-	const float epsilon2 = 1e-10;
+	const float epsilon2 = 1e-10f;
 
 	if ((a <= epsilon) || (weight[0] < -epsilon2) || (weight[1] < -epsilon2)
 			|| (weight[2] < -epsilon2) || (dist <= 0.0f)) {
@@ -220,7 +219,8 @@ __device__ void shade(const Triangle& T, const Vector3& P, const Vector3& n,
 	const Vector3& w_i = offset / distanceToLight;
 
 	// Scatter the light
-	L_o = (light.power / (4*PI*distanceToLight * distanceToLight)) * T.bsdf().evaluateFiniteScatteringDensity(w_i, w_o, n)
+	L_o = (light.power / (4*PI*distanceToLight * distanceToLight))
+			* T.bsdf().evaluateFiniteScatteringDensity(w_i, w_o, n)
 			* max(0.0, w_i.dot(n));
 }
 
@@ -231,6 +231,7 @@ __device__ bool sampleRayTriangle(const Ray& R, const Triangle& T,
 	if (d >= distance) {
 		return false;
 	}
+	distance = d;
 	// This intersection is closer than the previous one
 	// Intersection point
 	const Vector3& P = R.origin() + R.direction() * d;
@@ -288,7 +289,7 @@ __global__ void rayCast(TColor *dst, int imageW, int imageH, Camera camera,
 
 	Triangle T;
 	//Color of our pixel
-	Radiance3 L_o(0.04f,0.04f,0.04f);
+	Radiance3 L_o(0.04f, 0.04f, 0.04f);
 	const Ray& R = camera.computeEyeRay(ix + 0.5f, iy + 0.5f, imageW, imageH);
 	//Now find the closest triangle that intersects with our ray
 	float distance = INFINITY;
@@ -310,7 +311,7 @@ __global__ void rayCast(TColor *dst, int imageW, int imageH, Camera camera,
 	}
 	//Draw our pixel if we are not outside of the buffer!
 	if (ix < imageW && iy < imageH) {
-		dst[imageW * iy + ix] = make_color(L_o.r, L_o.g, L_o.b, 1.0);
+		dst[imageW * iy + ix] = make_color(min(L_o.r,1.0f), min(L_o.g,1.0f), min(L_o.b,1.0f), 1.0);
 	}
 }
 

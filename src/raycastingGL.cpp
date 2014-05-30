@@ -30,7 +30,7 @@ GLuint shader;
 objLoader loader;
 float *d_normals, *d_vertices;
 unsigned int *d_faces;
-Light light(Vector3(1.0f, 1.0f, 1.0f), Power3(180.0, 180.0, 180.0));
+Light light(Vector3(1.0f, 1.0f, 1.0f), Power3(380.0, 380.0, 380.0));
 Camera cam(imageW, imageH, 1.0f, Vector3(0.0f, 0.0f, 0.0f));
 bool R = true;
 float angle = 0, anglestep=0.01f;
@@ -369,7 +369,7 @@ int main(int argc, char **argv) {
 	initOpenGLBuffers();
 
 	//Let's parse our object!
-	if (loader.parseOBJ("data/gourd.obj")) {
+	if (loader.parseOBJ("data/teapot.obj")) {
 		//Allocating arrays for our data
 		checkCudaErrors(
 				cudaMalloc(&d_faces,

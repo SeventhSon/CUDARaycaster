@@ -20,6 +20,3 @@ Release/
 *.exe
 *.out
 *.app
-
-.project
-.cproject
