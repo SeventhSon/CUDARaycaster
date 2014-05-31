@@ -134,7 +134,7 @@ CUDA_CALLABLE_MEMBER const BSDF& Triangle::bsdf() const {
 // Color3
 ////////////////////////////////////////////////////////////////////////////////
 CUDA_CALLABLE_MEMBER const Color3 Color3::operator*(const float &q) const {
-	return Color3(this->r * q, this->g * q,	this->b * q);
+	return Color3(this->r * q, this->g * q, this->b * q);
 }
 
 CUDA_CALLABLE_MEMBER const Color3 Color3::operator*(const Color3 &q) const {
@@ -177,9 +177,32 @@ CUDA_CALLABLE_MEMBER void Camera::lookAt(const Vector3& point,
 	right = direction.cross(up).direction();
 	this->up = right.cross(direction).direction();
 }
-
 ////////////////////////////////////////////////////////////////////////////////
-//Raycasting device functions
+// BVH creation
+////////////////////////////////////////////////////////////////////////////////
+// Expands a 10-bit integer into 30 bits
+// by inserting 2 zeros after each bit.
+__device__ unsigned int expandBits(unsigned int v) {
+	v = (v * 0x00010001u) & 0xFF0000FFu;
+	v = (v * 0x00000101u) & 0x0F00F00Fu;
+	v = (v * 0x00000011u) & 0xC30C30C3u;
+	v = (v * 0x00000005u) & 0x49249249u;
+	return v;
+}
+
+// Calculates a 30-bit Morton code for the
+// given 3D point located within the unit cube [0,1].
+__device__ unsigned int morton3D(float x, float y, float z) {
+	x = min(max(x * 1024.0f, 0.0f), 1023.0f);
+	y = min(max(y * 1024.0f, 0.0f), 1023.0f);
+	z = min(max(z * 1024.0f, 0.0f), 1023.0f);
+	unsigned int xx = expandBits((unsigned int) x);
+	unsigned int yy = expandBits((unsigned int) y);
+	unsigned int zz = expandBits((unsigned int) z);
+	return xx * 4 + yy * 2 + zz;
+}
+////////////////////////////////////////////////////////////////////////////////
+// Raycasting device functions
 ////////////////////////////////////////////////////////////////////////////////
 
 __device__ float intersect(const Ray& R, const Triangle& T, float weight[3]) {
@@ -219,7 +242,7 @@ __device__ void shade(const Triangle& T, const Vector3& P, const Vector3& n,
 	const Vector3& w_i = offset / distanceToLight;
 
 	// Scatter the light
-	L_o = (light.power / (4*PI*distanceToLight * distanceToLight))
+	L_o = (light.power / (4 * PI * distanceToLight * distanceToLight))
 			* T.bsdf().evaluateFiniteScatteringDensity(w_i, w_o, n)
 			* max(0.0, w_i.dot(n));
 }
@@ -257,6 +280,12 @@ __device__ Vector3 getVector(unsigned int i, float* data) {
 
 //Shared memory handle
 extern __shared__ float sharedData[];
+
+__global__ void bvhCreate(unsigned int faceCount, unsigned int vertexCount,
+		unsigned int normalCount, unsigned int* d_faces, float* d_vertices,
+		float* d_normals) {
+
+}
 
 __global__ void rayCast(TColor *dst, int imageW, int imageH, Camera camera,
 		Light light, unsigned int faceCount, unsigned int vertexCount,
@@ -311,7 +340,8 @@ __global__ void rayCast(TColor *dst, int imageW, int imageH, Camera camera,
 	}
 	//Draw our pixel if we are not outside of the buffer!
 	if (ix < imageW && iy < imageH) {
-		dst[imageW * iy + ix] = make_color(min(L_o.r,1.0f), min(L_o.g,1.0f), min(L_o.b,1.0f), 1.0);
+		dst[imageW * iy + ix] = make_color(min(L_o.r, 1.0f), min(L_o.g, 1.0f),
+				min(L_o.b, 1.0f), 1.0);
 	}
 }
 

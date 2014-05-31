@@ -162,4 +162,35 @@ public:
 			float x, float y, int width, int height);
 };
 
+class AABoundingBox{
+public:
+	float minX, minY, minZ;
+	float maxX, maxY, maxZ;
+	CUDA_CALLABLE_MEMBER AABoundingBox(Vector3 v1, Vector3 v2, Vector3 v3){
+		if(v2.x>v1.x){
+			minX=v1.x;
+			maxX=v2.x;
+		}else{
+			minX=v2.x;
+			maxX=v1.x;
+		}
+		if(v3.x<minX)
+			minX=v3.x;
+		else
+
+		if(v2.y>v1.y)
+			minY=v1.y;
+		else
+			minY=v2.y;
+		if(v3.y<minY)
+			minY=v3.y;
+
+		if(v2.z>v1.z)
+			minZ=v1.z;
+		else
+			minZ=v2.z;
+		if(v3.z<minZ)
+			minZ=v3.z;
+	}
+};
 #endif /* UTILITY_CUH_ */
