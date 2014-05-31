@@ -162,11 +162,34 @@ public:
 			float x, float y, int width, int height);
 };
 
+class BVHInternalNode{
+public:
+	const AABoundingBox aabb;
+	BVHNode(unsigned int objectId,const AABoundingBox& aabb) :
+		aabb(aabb){
+
+	}
+};
+
+class BVHLeafNode{
+public:
+	const unsigned int objectId;
+	const AABoundingBox aabb;
+	BVHNode(unsigned int objectId,const AABoundingBox& aabb) :
+		objectId(objectId),aabb(aabb){
+
+	}
+};
+
 class AABoundingBox{
 public:
 	float minX, minY, minZ;
 	float maxX, maxY, maxZ;
-	CUDA_CALLABLE_MEMBER AABoundingBox(Vector3 v1, Vector3 v2, Vector3 v3){
+	CUDA_CALLABLE_MEMBER AABoundingBox(float minX,float minY,float minZ,float maxX, float maxY, float maxZ) :
+		minX(minX),minY(minY),minZ(minZ),maxX(maxX),maxY(maxY),maxZ(maxZ){
+
+	}
+	CUDA_CALLABLE_MEMBER AABoundingBox(const Vector3& v1,const Vector3& v2,const Vector3& v3){
 		if(v2.x>v1.x){
 			minX=v1.x;
 			maxX=v2.x;
@@ -176,21 +199,36 @@ public:
 		}
 		if(v3.x<minX)
 			minX=v3.x;
-		else
+		if(v3.x>maxX)
+			maxX=v3.x;
 
-		if(v2.y>v1.y)
+
+		if(v2.y>v1.y){
 			minY=v1.y;
-		else
+			maxY=v2.y;
+		}else{
 			minY=v2.y;
+			maxY=v1.y;
+		}
 		if(v3.y<minY)
 			minY=v3.y;
+		if(v3.y>maxY)
+			maxY=v3.y;
 
-		if(v2.z>v1.z)
+
+		if(v2.z>v1.z){
 			minZ=v1.z;
-		else
+			maxZ=v2.z;
+		}else{
 			minZ=v2.z;
+			maxZ=v1.z;
+		}
 		if(v3.z<minZ)
-			minZ=v3.z;
+			minZ=v3.x;
+		if(v3.z>maxX)
+			maxZ=v3.x;
 	}
+	CUDA_CALLABLE_MEMBER const unsigned int getCenter() const;
+	CUDA_CALLABLE_MEMBER const AABoundingBox operator+(const AABoundingBox &q) const;
 };
 #endif /* UTILITY_CUH_ */

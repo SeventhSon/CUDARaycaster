@@ -177,6 +177,14 @@ CUDA_CALLABLE_MEMBER void Camera::lookAt(const Vector3& point,
 	right = direction.cross(up).direction();
 	this->up = right.cross(direction).direction();
 }
+
+CUDA_CALLABLE_MEMBER const unsigned int AABoundingBox::getCenter() const{
+	return Vector3((maxX-minX)*0.5f,(maxY-minY)*0.5f,(maxZ-minZ)*0.5f);
+}
+
+CUDA_CALLABLE_MEMBER const AABoundingBox AABoundingBox::operator+(const AABoundingBox &q) const{
+	return AABoundingBox(min(this->minX,q.minX),min(this->minY,q.minY),min(this->minZ,q.minZ),max(this->maxX,q.maxX),max(this->maxY,q.maxY),max(this->maxZ,q.maxZ));
+}
 ////////////////////////////////////////////////////////////////////////////////
 // BVH creation
 ////////////////////////////////////////////////////////////////////////////////
@@ -282,9 +290,17 @@ __device__ Vector3 getVector(unsigned int i, float* data) {
 extern __shared__ float sharedData[];
 
 __global__ void bvhCreate(unsigned int faceCount, unsigned int vertexCount,
-		unsigned int normalCount, unsigned int* d_faces, float* d_vertices,
+		unsigned int normalCount, unsigned int* d_objectIds, unsigned int* d_faces, float* d_vertices,
 		float* d_normals) {
-
+	AABoundingBox* sh_aabbs = (AABoundingBox*) &sharedData;
+	unsigned int* sh_mortonCodes = (AABoundingBox*) &sh_aabbs[faceCount];
+	unsigned int i=0;
+	for (unsigned int t = 0; t < faceCount * 6; t += 6) {
+		AABoundingBox aabb(getVector((d_faces[t] - 1) * 3, d_vertices),
+					getVector((d_faces[t + 1] - 1) * 3, d_vertices),
+					getVector((d_faces[t + 2] - 1) * 3, d_vertices));
+		sh_mortonCodes[i] = morton3D(aabb.getCenter());
+	}
 }
 
 __global__ void rayCast(TColor *dst, int imageW, int imageH, Camera camera,
