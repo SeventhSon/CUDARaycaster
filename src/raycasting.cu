@@ -290,14 +290,14 @@ __device__ Vector3 getVector(unsigned int i, float* data) {
 extern __shared__ float sharedData[];
 
 __global__ void bvhCreate(unsigned int faceCount, unsigned int vertexCount,
-		unsigned int normalCount, unsigned int* d_objectIds, unsigned int* d_faces, float* d_vertices,
+		unsigned int* d_faces, float* d_vertices,unsigned int* d_objectIds,
 		AABoundingBox* d_aabbs, unsigned int* d_mortonCodes) {
 	const unsigned int threads = blockDim.x * blockDim.y;
 	const unsigned int idx = threadIdx.x + threadIdx.y*blockDim.x;
-
 	unsigned int i=0;
 	for (unsigned int t = idx * 6; t < faceCount * 6; t += threads) {
 		AABoundingBox aabb(getVector((d_faces[t] - 1) * 3, d_vertices), getVector((d_faces[t + 1] - 1) * 3, d_vertices), getVector((d_faces[t + 2] - 1) * 3, d_vertices));
+		d_objectIds[i] = i;
 		d_aabbs[i] = aabb;
 		Vector3 center = aabb.getCenter();
 		d_mortonCodes[i] = morton3D(center.x,center.y,center.z);
@@ -392,7 +392,7 @@ extern "C" cudaError_t CUDA_FreeArray() {
 extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
 		Camera camera, Light light, unsigned int faceCount,
 		unsigned int vertexCount, unsigned int normalCount,
-		unsigned int* d_faces, float* d_vertices, float*d_normals) {
+		unsigned int* d_faces, float* d_vertices, float*d_normals, unsigned int* d_objectIds, AABoundingBox* d_aabbs, unsigned int* d_mortonCodes) {
 	dim3 threads(BLOCKDIM_X, BLOCKDIM_Y);
 	dim3 grid(iDivUp(imageW, BLOCKDIM_X), iDivUp(imageH, BLOCKDIM_Y));
 
@@ -405,9 +405,14 @@ extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
 	aligned_v_count += ALIGN - aligned_v_count % ALIGN;
 	aligned_n_count += ALIGN - aligned_n_count % ALIGN;
 	//printf("v %d n %d f %d\n",aligned_v_count,aligned_n_count,aligned_f_count);
+	//unsigned int grids = (faceCount/512.0f+0.5f);
+	//printf("%d\n",grids);
+	bvhCreate<<<1,faceCount>>>(faceCount,vertexCount,d_faces,d_vertices,d_objectIds,d_aabbs,d_mortonCodes);
+	cudaDeviceSynchronize();
 	rayCast<<<grid, threads,
 			(aligned_f_count * sizeof(int)
 					+ (aligned_v_count + aligned_n_count) * sizeof(float))>>>(
 			d_dst, imageW, imageH, camera, light, faceCount, vertexCount,
 			normalCount, d_faces, d_vertices, d_normals);
+	cudaDeviceSynchronize();
 }

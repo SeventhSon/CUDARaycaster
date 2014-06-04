@@ -22,6 +22,8 @@ extern "C" cudaError_t CUDA_FreeArray();
 #include "utility.cuh"
 // CUDA kernel functions
 extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
-		Camera camera, Light light, unsigned int faceCount, unsigned int vertexCount, unsigned int normalCount,unsigned int* d_faces,float* d_vertices, float*d_normals);
+		Camera camera, Light light, unsigned int faceCount, unsigned int vertexCount,
+		unsigned int normalCount,unsigned int* d_faces,float* d_vertices, float*d_normals,
+		unsigned int* d_objectIds, AABoundingBox* d_aabbs, unsigned int* d_mortonCodes);
 
 #endif

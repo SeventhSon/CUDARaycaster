@@ -29,7 +29,8 @@ GLuint shader;
 //Host side scene definition arrays
 objLoader loader;
 float *d_normals, *d_vertices;
-unsigned int *d_faces;
+unsigned int *d_faces, *d_objectIds, *d_mortonCodes;
+AABoundingBox* d_aabbs;
 Light light(Vector3(1.0f, 1.0f, 1.0f), Power3(380.0, 380.0, 380.0));
 Camera cam(imageW, imageH, 1.0f, Vector3(0.0f, 0.0f, 0.0f));
 bool R = true;
@@ -134,7 +135,7 @@ void displayFunc(void) {
 	}
 	cuda_rayCasting(d_dst, imageW, imageH, cam, light, loader.faceCount,
 			loader.vertexCount, loader.normalCount, d_faces, d_vertices,
-			d_normals);
+			d_normals, d_objectIds, d_aabbs, d_mortonCodes);
 	getLastCudaError("Raycasting kernel execution failed.\n");
 	//////////////////////////////////////////////////////////////////////////////
 
@@ -379,6 +380,15 @@ int main(int argc, char **argv) {
 		checkCudaErrors(
 				cudaMalloc(&d_vertices,
 						sizeof(float) * loader.vertexCount * 3));
+		checkCudaErrors(
+				cudaMalloc(&d_objectIds,
+						sizeof(unsigned int) * loader.faceCount));
+		checkCudaErrors(
+				cudaMalloc(&d_aabbs,
+						sizeof(AABoundingBox) * loader.faceCount));
+		checkCudaErrors(
+				cudaMalloc(&d_mortonCodes,
+						sizeof(unsigned int) * loader.faceCount));
 		//Copying data to device
 		checkCudaErrors(
 				cudaMemcpy(d_faces, loader.triangles_arr,
