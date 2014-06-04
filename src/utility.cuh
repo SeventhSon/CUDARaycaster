@@ -162,25 +162,6 @@ public:
 			float x, float y, int width, int height);
 };
 
-class BVHInternalNode{
-public:
-	const AABoundingBox aabb;
-	BVHNode(unsigned int objectId,const AABoundingBox& aabb) :
-		aabb(aabb){
-
-	}
-};
-
-class BVHLeafNode{
-public:
-	const unsigned int objectId;
-	const AABoundingBox aabb;
-	BVHNode(unsigned int objectId,const AABoundingBox& aabb) :
-		objectId(objectId),aabb(aabb){
-
-	}
-};
-
 class AABoundingBox{
 public:
 	float minX, minY, minZ;
@@ -228,7 +209,7 @@ public:
 		if(v3.z>maxX)
 			maxZ=v3.x;
 	}
-	CUDA_CALLABLE_MEMBER const unsigned int getCenter() const;
+	CUDA_CALLABLE_MEMBER Vector3 getCenter() const;
 	CUDA_CALLABLE_MEMBER const AABoundingBox operator+(const AABoundingBox &q) const;
 };
 #endif /* UTILITY_CUH_ */

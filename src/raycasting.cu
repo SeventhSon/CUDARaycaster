@@ -178,7 +178,7 @@ CUDA_CALLABLE_MEMBER void Camera::lookAt(const Vector3& point,
 	this->up = right.cross(direction).direction();
 }
 
-CUDA_CALLABLE_MEMBER const unsigned int AABoundingBox::getCenter() const{
+CUDA_CALLABLE_MEMBER Vector3 AABoundingBox::getCenter() const{
 	return Vector3((maxX-minX)*0.5f,(maxY-minY)*0.5f,(maxZ-minZ)*0.5f);
 }
 
@@ -291,15 +291,17 @@ extern __shared__ float sharedData[];
 
 __global__ void bvhCreate(unsigned int faceCount, unsigned int vertexCount,
 		unsigned int normalCount, unsigned int* d_objectIds, unsigned int* d_faces, float* d_vertices,
-		float* d_normals) {
-	AABoundingBox* sh_aabbs = (AABoundingBox*) &sharedData;
-	unsigned int* sh_mortonCodes = (AABoundingBox*) &sh_aabbs[faceCount];
+		AABoundingBox* d_aabbs, unsigned int* d_mortonCodes) {
+	const unsigned int threads = blockDim.x * blockDim.y;
+	const unsigned int idx = threadIdx.x + threadIdx.y*blockDim.x;
+
 	unsigned int i=0;
-	for (unsigned int t = 0; t < faceCount * 6; t += 6) {
-		AABoundingBox aabb(getVector((d_faces[t] - 1) * 3, d_vertices),
-					getVector((d_faces[t + 1] - 1) * 3, d_vertices),
-					getVector((d_faces[t + 2] - 1) * 3, d_vertices));
-		sh_mortonCodes[i] = morton3D(aabb.getCenter());
+	for (unsigned int t = idx * 6; t < faceCount * 6; t += threads) {
+		AABoundingBox aabb(getVector((d_faces[t] - 1) * 3, d_vertices), getVector((d_faces[t + 1] - 1) * 3, d_vertices), getVector((d_faces[t + 2] - 1) * 3, d_vertices));
+		d_aabbs[i] = aabb;
+		Vector3 center = aabb.getCenter();
+		d_mortonCodes[i] = morton3D(center.x,center.y,center.z);
+		i++;
 	}
 }
 
@@ -308,12 +310,12 @@ __global__ void rayCast(TColor *dst, int imageW, int imageH, Camera camera,
 		unsigned int normalCount, unsigned int* d_faces, float* d_vertices,
 		float*d_normals) {
 	//Global x, y image coordinates
-	const int ix = blockDim.x * blockIdx.x + threadIdx.x;
-	const int iy = blockDim.y * blockIdx.y + threadIdx.y;
+	const unsigned int ix = blockDim.x * blockIdx.x + threadIdx.x;
+	const unsigned int iy = blockDim.y * blockIdx.y + threadIdx.y;
 	//Number of threads in a block
-	const int threads = blockDim.x * blockDim.y;
+	const unsigned int threads = blockDim.x * blockDim.y;
 	//The serial id of a thread in its block
-	const int serialId = threadIdx.x + threadIdx.y * blockDim.x;
+	const unsigned int serialId = threadIdx.x + threadIdx.y * blockDim.x;
 
 	//Define sharedMemory array handlers for conviniece
 	float* sh_vertices = (float*) &sharedData;
