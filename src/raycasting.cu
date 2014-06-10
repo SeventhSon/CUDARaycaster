@@ -1,6 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include <thrust/sort.h>
+#include <thrust/device_ptr.h>
+
 #include "raycasting.h"
 
 #define ALIGN 4
@@ -178,12 +182,16 @@ CUDA_CALLABLE_MEMBER void Camera::lookAt(const Vector3& point,
 	this->up = right.cross(direction).direction();
 }
 
-CUDA_CALLABLE_MEMBER Vector3 AABoundingBox::getCenter() const{
-	return Vector3((maxX-minX)*0.5f,(maxY-minY)*0.5f,(maxZ-minZ)*0.5f);
+CUDA_CALLABLE_MEMBER Vector3 AABoundingBox::getCenter() const {
+	return Vector3((maxX - minX) * 0.5f, (maxY - minY) * 0.5f,
+			(maxZ - minZ) * 0.5f);
 }
 
-CUDA_CALLABLE_MEMBER const AABoundingBox AABoundingBox::operator+(const AABoundingBox &q) const{
-	return AABoundingBox(min(this->minX,q.minX),min(this->minY,q.minY),min(this->minZ,q.minZ),max(this->maxX,q.maxX),max(this->maxY,q.maxY),max(this->maxZ,q.maxZ));
+CUDA_CALLABLE_MEMBER const AABoundingBox AABoundingBox::operator+(
+		const AABoundingBox &q) const {
+	return AABoundingBox(min(this->minX, q.minX), min(this->minY, q.minY),
+			min(this->minZ, q.minZ), max(this->maxX, q.maxX),
+			max(this->maxY, q.maxY), max(this->maxZ, q.maxZ));
 }
 ////////////////////////////////////////////////////////////////////////////////
 // BVH creation
@@ -208,6 +216,90 @@ __device__ unsigned int morton3D(float x, float y, float z) {
 	unsigned int yy = expandBits((unsigned int) y);
 	unsigned int zz = expandBits((unsigned int) z);
 	return xx * 4 + yy * 2 + zz;
+}
+
+__device__ unsigned int ones32(register unsigned int x) {
+	/* 32-bit recursive reduction using SWAR...
+	 but first step is mapping 2-bit values
+	 into sum of 2 1-bit values in sneaky way
+	 */
+	x -= ((x >> 1) & 0x55555555);
+	x = (((x >> 2) & 0x33333333) + (x & 0x33333333));
+	x = (((x >> 4) + x) & 0x0f0f0f0f);
+	x += (x >> 8);
+	x += (x >> 16);
+	return (x & 0x0000003f);
+}
+
+__device__ unsigned int lzc(int x) {
+	x |= (x >> 1);
+	x |= (x >> 2);
+	x |= (x >> 4);
+	x |= (x >> 8);
+	x |= (x >> 16);
+	return (31 - ones32(x));
+}
+
+__device__ int2 determineRange(unsigned int* d_sortedMortonCodes,
+		unsigned int objCount, unsigned int i) {
+	bool dir = signbit(lzc(d_sortedMortonCodes[i] ^ d_sortedMortonCodes[i+1])-
+			lzc(d_sortedMortonCodes[i] ^ d_sortedMortonCodes[i-1]))
+	;
+	int minDist = lzc(d_sortedMortonCodes[i] ^ d_sortedMortonCodes[i - dir]);
+	int step = 2;
+	int start = i;
+	int2 range;
+	while ((i + dir * step) < objCount
+			&& lzc(d_sortedMortonCodes[i] ^ d_sortedMortonCodes[i + dir * step])
+					> minDist)
+		step = step << 1; // exponential increase
+	step = step >> 1;
+	range.y = i + dir * step;
+
+	do {
+		step = (step + 1) >> 1; // exponential decrease
+		int newStart = start + step * dir; // proposed new position
+		if (newStart < objCount
+				&& lzc(d_sortedMortonCodes[i] ^ d_sortedMortonCodes[newStart])
+						> minDist)
+			start = newStart; // accept proposal
+	} while (step > 1);
+	range.x = start;
+
+	return range;
+}
+
+__device__ int findSplit(unsigned int* sortedMortonCodes, int first, int last) {
+	unsigned int firstCode = sortedMortonCodes[first];
+	unsigned int lastCode = sortedMortonCodes[last];
+
+	// Identical Morton codes => split the range in the middle.
+	if (firstCode == lastCode)
+		return (first + last) >> 1;
+
+	// Calculate the number of highest bits that are the same
+	// for all objects, using the count-leading-zeros intrinsic.
+	int commonPrefix = lzc(firstCode ^ lastCode);
+
+	// Use binary search to find where the next bit differs.
+	// Specifically, we are looking for the highest object that
+	// shares more than commonPrefix bits with the first one.
+	int split = first; // initial guess
+	int step = last - first;
+
+	do {
+		step = (step + 1) >> 1; // exponential decrease
+		int newSplit = split + step; // proposed new position
+
+		if (newSplit < last) {
+			unsigned int splitCode = sortedMortonCodes[newSplit];
+			int splitPrefix = lzc(firstCode ^ splitCode);
+			if (splitPrefix > commonPrefix)
+				split = newSplit; // accept proposal
+		}
+	} while (step > 1);
+
+	return split;
 }
 ////////////////////////////////////////////////////////////////////////////////
 // Raycasting device functions
@@ -250,7 +342,7 @@ __device__ void shade(const Triangle& T, const Vector3& P, const Vector3& n,
 	const Vector3& w_i = offset / distanceToLight;
 
 	// Scatter the light
-	L_o = (light.power / (4 * PI * distanceToLight * distanceToLight))
+	L_o = (light.power / (4.0f * PI * distanceToLight * distanceToLight))
 			* T.bsdf().evaluateFiniteScatteringDensity(w_i, w_o, n)
 			* max(0.0, w_i.dot(n));
 }
@@ -289,19 +381,65 @@ __device__ Vector3 getVector(unsigned int i, float* data) {
 //Shared memory handle
 extern __shared__ float sharedData[];
 
-__global__ void bvhCreate(unsigned int faceCount, unsigned int vertexCount,
-		unsigned int* d_faces, float* d_vertices,unsigned int* d_objectIds,
-		AABoundingBox* d_aabbs, unsigned int* d_mortonCodes) {
+__global__ void prepareLeafs(unsigned int faceCount, unsigned int vertexCount,
+		unsigned int* d_faces, float* d_vertices, unsigned int* d_objectIds,
+		unsigned int* d_mortonCodes, AABoundingBox* d_aabbs) {
 	const unsigned int threads = blockDim.x * blockDim.y;
-	const unsigned int idx = threadIdx.x + threadIdx.y*blockDim.x;
-	unsigned int i=0;
-	for (unsigned int t = idx * 6; t < faceCount * 6; t += threads) {
-		AABoundingBox aabb(getVector((d_faces[t] - 1) * 3, d_vertices), getVector((d_faces[t + 1] - 1) * 3, d_vertices), getVector((d_faces[t + 2] - 1) * 3, d_vertices));
-		d_objectIds[i] = i;
-		d_aabbs[i] = aabb;
-		Vector3 center = aabb.getCenter();
-		d_mortonCodes[i] = morton3D(center.x,center.y,center.z);
-		i++;
+	const unsigned int idx = threadIdx.x + blockDim.x * threadIdx.y;
+	for (unsigned int t = idx * 6; t < faceCount * 6; t += threads * 6) {
+		AABoundingBox aabb(getVector((d_faces[t] - 1) * 3, d_vertices),
+				getVector((d_faces[t + 1] - 1) * 3, d_vertices),
+				getVector((d_faces[t + 2] - 1) * 3, d_vertices));
+		d_objectIds[t / 6] = t / 6;
+		d_aabbs[t / 6] = aabb;
+		const Vector3& center = aabb.getCenter();
+		d_mortonCodes[t / 6] = morton3D(center.x, center.y, center.z);
+	}
+}
+
+__global__ void createBVHTree(unsigned int* d_sortedObjectIds,
+		unsigned int* d_sortedMortonCodes, AABoundingBox* d_aabbs,
+		unsigned int objCount, BVHNode* d_bvhNodes) {
+	const unsigned int threads = blockDim.x * blockDim.y;
+	const unsigned int idx = threadIdx.x + blockDim.x * threadIdx.y;
+	// Construct leaf nodes.
+	for (unsigned int i = idx; i < objCount; i += threads) {
+		unsigned int id = d_sortedObjectIds[i];
+		BVHNode leaf(d_aabbs[id]);
+		leaf.objectId = id;
+		leaf.isLeaf = true;
+		d_bvhNodes[i + objCount - 1] = leaf;
+	}
+	// Construct internal nodes.
+	for (unsigned int i = idx; i < objCount - 1; i += threads) {
+
+		// Find out which range of objects the node corresponds to.
+		/*int2 range = determineRange(d_sortedMortonCodes, objCount, i);
+		 int first = range.x;
+		 int last = range.y;
+		 */
+		// Determine where to split the range.
+		//int split = findSplit(d_sortedMortonCodes, first, last);
+		int first = 0;
+		int last = 0;
+		int split = 0;
+		unsigned int left;
+		if (split == first)
+			left = split + objCount - 1;
+		else
+			left = split;
+
+		unsigned int right;
+		if (split + 1 == last)
+			right = split + 1 + objCount - 1;
+		else
+			right = split + 1;
+
+		BVHNode internal(d_bvhNodes[0].aabb + d_bvhNodes[0].aabb);
+		internal.left = left;
+		internal.right = right;
+		internal.isLeaf = false;
+		d_bvhNodes[i] = internal;
 	}
 }
 
@@ -392,23 +530,35 @@ extern "C" cudaError_t CUDA_FreeArray() {
 extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
 		Camera camera, Light light, unsigned int faceCount,
 		unsigned int vertexCount, unsigned int normalCount,
-		unsigned int* d_faces, float* d_vertices, float*d_normals, unsigned int* d_objectIds, AABoundingBox* d_aabbs, unsigned int* d_mortonCodes) {
+		unsigned int* d_faces, float* d_vertices, float*d_normals,
+		unsigned int* d_objectIds, unsigned int* d_mortonCodes,
+		AABoundingBox* d_aabbs, BVHNode* d_bvhNodes) {
 	dim3 threads(BLOCKDIM_X, BLOCKDIM_Y);
 	dim3 grid(iDivUp(imageW, BLOCKDIM_X), iDivUp(imageH, BLOCKDIM_Y));
 
-	//printf("MEm needed %d\n",
-	//		((vertexCount * 3 + normalCount * 3 + faceCount * 6) * sizeof(float)));
 	unsigned int aligned_v_count = vertexCount * 3;
 	unsigned int aligned_n_count = normalCount * 3;
 	unsigned int aligned_f_count = faceCount * 6;
 	aligned_f_count += ALIGN - aligned_f_count % ALIGN;
 	aligned_v_count += ALIGN - aligned_v_count % ALIGN;
 	aligned_n_count += ALIGN - aligned_n_count % ALIGN;
-	//printf("v %d n %d f %d\n",aligned_v_count,aligned_n_count,aligned_f_count);
-	//unsigned int grids = (faceCount/512.0f+0.5f);
-	//printf("%d\n",grids);
-	bvhCreate<<<1,faceCount>>>(faceCount,vertexCount,d_faces,d_vertices,d_objectIds,d_aabbs,d_mortonCodes);
+
+	//Calculate AABBs and morton codes
+	printf("%d\n",faceCount);
+	prepareLeafs<<<1, faceCount>>>(faceCount, vertexCount, d_faces, d_vertices,
+			d_objectIds, d_mortonCodes, d_aabbs);
 	cudaDeviceSynchronize();
+	//Sort objects by morton codes
+	thrust::device_ptr<unsigned int> d_data_ptr(d_objectIds);
+	thrust::device_ptr<unsigned int> d_keys_ptr(d_mortonCodes);
+	thrust::sort_by_key(d_keys_ptr, d_keys_ptr + faceCount, d_data_ptr);
+	d_mortonCodes = thrust::raw_pointer_cast(d_data_ptr);
+	d_objectIds = thrust::raw_pointer_cast(d_keys_ptr);
+	//Create the tree!
+	createBVHTree<<<1, faceCount * 2>>>(d_objectIds, d_mortonCodes, d_aabbs,
+			faceCount, d_bvhNodes);
+	cudaDeviceSynchronize();
+	//Raycast
 	rayCast<<<grid, threads,
 			(aligned_f_count * sizeof(int)
 					+ (aligned_v_count + aligned_n_count) * sizeof(float))>>>(

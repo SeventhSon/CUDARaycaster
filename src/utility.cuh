@@ -14,7 +14,7 @@
 #define CUDA_CALLABLE_MEMBER
 #endif
 
-# define PI 3.14159265358979323846
+# define PI 3.14159265358979323846f
 
 //Raycasting Classes
 class Vector3 {
@@ -76,7 +76,7 @@ public:
 	Color3 k_G;
 	float s;
 	CUDA_CALLABLE_MEMBER BSDF() :
-			k_L(Color3(0,0,0)), k_G(Color3(0,0,0)), s(100.0f){
+			k_L(Color3(0.0f,0.0f,0.0f)), k_G(Color3(0.0f,0.0f,0.0f)), s(100.0f){
 
 	}
 
@@ -180,7 +180,7 @@ public:
 		}
 		if(v3.x<minX)
 			minX=v3.x;
-		if(v3.x>maxX)
+		else if(v3.x>maxX)
 			maxX=v3.x;
 
 
@@ -193,7 +193,7 @@ public:
 		}
 		if(v3.y<minY)
 			minY=v3.y;
-		if(v3.y>maxY)
+		else if(v3.y>maxY)
 			maxY=v3.y;
 
 
@@ -205,11 +205,22 @@ public:
 			maxZ=v1.z;
 		}
 		if(v3.z<minZ)
-			minZ=v3.x;
-		if(v3.z>maxX)
-			maxZ=v3.x;
+			minZ=v3.z;
+		else if(v3.z>maxZ)
+			maxZ=v3.z;
 	}
 	CUDA_CALLABLE_MEMBER Vector3 getCenter() const;
 	CUDA_CALLABLE_MEMBER const AABoundingBox operator+(const AABoundingBox &q) const;
+};
+
+class BVHNode{
+public:
+	AABoundingBox aabb;
+	bool isLeaf;
+	unsigned int objectId;
+	unsigned int left, right;
+	CUDA_CALLABLE_MEMBER BVHNode(AABoundingBox aabb): aabb(aabb){
+
+	}
 };
 #endif /* UTILITY_CUH_ */

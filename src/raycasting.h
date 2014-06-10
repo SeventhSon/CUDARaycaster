@@ -24,6 +24,6 @@ extern "C" cudaError_t CUDA_FreeArray();
 extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
 		Camera camera, Light light, unsigned int faceCount, unsigned int vertexCount,
 		unsigned int normalCount,unsigned int* d_faces,float* d_vertices, float*d_normals,
-		unsigned int* d_objectIds, AABoundingBox* d_aabbs, unsigned int* d_mortonCodes);
+		unsigned int* d_objectIds, unsigned int* d_mortonCodes,AABoundingBox* d_aabbs, BVHNode* d_bvhNodes);
 
 #endif

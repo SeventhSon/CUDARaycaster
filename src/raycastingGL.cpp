@@ -29,9 +29,10 @@ GLuint shader;
 //Host side scene definition arrays
 objLoader loader;
 float *d_normals, *d_vertices;
-unsigned int *d_faces, *d_objectIds, *d_mortonCodes;
+unsigned int* d_faces, *d_objectIds, *d_mortonCodes, *h_mortonCodes, *h_objectIds;
 AABoundingBox* d_aabbs;
-Light light(Vector3(1.0f, 1.0f, 1.0f), Power3(380.0, 380.0, 380.0));
+BVHNode* d_bvhNodes;
+Light light(Vector3(1.0f, 1.0f, 1.0f), Power3(300.0f, 300.0f, 300.0f));
 Camera cam(imageW, imageH, 1.0f, Vector3(0.0f, 0.0f, 0.0f));
 bool R = true;
 float angle = 0, anglestep=0.01f;
@@ -130,12 +131,24 @@ void displayFunc(void) {
 
 	if (R) {
 		angle+=anglestep;
-		cam.setPosition(Vector3(cosf(angle)*8, 0.0f, sinf(angle)*8));
+		cam.setPosition(Vector3(cosf(angle)*8.0f, 0.0f, sinf(angle)*8.0f));
 		cam.lookAt(Vector3(0.0f, 0.0f, 0.0f), Vector3(0.0f, 1.0f, 0.0f));
 	}
 	cuda_rayCasting(d_dst, imageW, imageH, cam, light, loader.faceCount,
 			loader.vertexCount, loader.normalCount, d_faces, d_vertices,
-			d_normals, d_objectIds, d_aabbs, d_mortonCodes);
+			d_normals, d_objectIds, d_mortonCodes, d_aabbs, d_bvhNodes);
+	checkCudaErrors(
+					cudaMemcpy(h_mortonCodes, d_mortonCodes,
+							loader.faceCount * sizeof(unsigned int),
+							cudaMemcpyDeviceToHost));
+	checkCudaErrors(
+					cudaMemcpy(h_objectIds, d_objectIds,
+							loader.faceCount * sizeof(unsigned int),
+							cudaMemcpyDeviceToHost));
+	for(int i=0;i<loader.faceCount;i++){
+		printf("%u %u\n",h_objectIds[i],h_mortonCodes[i]);
+		//printf("%f %f %f %f %f %f\n", h_leafs[i].aabb.minX, h_leafs[i].aabb.minY, h_leafs[i].aabb.minZ, h_leafs[i].aabb.maxX, h_leafs[i].aabb.maxY, h_leafs[i].aabb.maxZ);
+	}
 	getLastCudaError("Raycasting kernel execution failed.\n");
 	//////////////////////////////////////////////////////////////////////////////
 
@@ -381,14 +394,19 @@ int main(int argc, char **argv) {
 				cudaMalloc(&d_vertices,
 						sizeof(float) * loader.vertexCount * 3));
 		checkCudaErrors(
+						cudaMalloc(&d_bvhNodes,
+								sizeof(BVHNode) * (loader.faceCount+loader.faceCount-1)));
+		checkCudaErrors(
 				cudaMalloc(&d_objectIds,
 						sizeof(unsigned int) * loader.faceCount));
 		checkCudaErrors(
-				cudaMalloc(&d_aabbs,
-						sizeof(AABoundingBox) * loader.faceCount));
+						cudaMalloc(&d_mortonCodes,
+								sizeof(unsigned int) * loader.faceCount));
 		checkCudaErrors(
-				cudaMalloc(&d_mortonCodes,
-						sizeof(unsigned int) * loader.faceCount));
+						cudaMalloc(&d_aabbs,
+								sizeof(AABoundingBox) * loader.faceCount));
+		h_mortonCodes = (unsigned int*)malloc(sizeof(unsigned int) * loader.faceCount);
+		h_objectIds = (unsigned int*)malloc(sizeof(unsigned int) * loader.faceCount);
 		//Copying data to device
 		checkCudaErrors(
 				cudaMemcpy(d_faces, loader.triangles_arr,
