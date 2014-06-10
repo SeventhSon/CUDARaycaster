@@ -218,7 +218,7 @@ __device__ unsigned int morton3D(float x, float y, float z) {
 	return xx * 4 + yy * 2 + zz;
 }
 
-__device__ unsigned int ones32(register unsigned int x) {
+__device__ int ones32(unsigned int x) {
 	/* 32-bit recursive reduction using SWAR...
 	 but first step is mapping 2-bit values
 	 into sum of 2 1-bit values in sneaky way
@@ -231,31 +231,28 @@ __device__ unsigned int ones32(register unsigned int x) {
 	return (x & 0x0000003f);
 }
 
-__device__ unsigned int lzc(int x) {
+__device__ int lzc(int x) {
 	x |= (x >> 1);
 	x |= (x >> 2);
 	x |= (x >> 4);
 	x |= (x >> 8);
 	x |= (x >> 16);
-	return (31 - ones32(x));
+	return (32 - ones32(x));
 }
 
 __device__ int2 determineRange(unsigned int* d_sortedMortonCodes,
 		unsigned int objCount, unsigned int i) {
-	bool dir = signbit(lzc(d_sortedMortonCodes[i] ^ d_sortedMortonCodes[i+1])-
-			lzc(d_sortedMortonCodes[i] ^ d_sortedMortonCodes[i-1]))
-	;
-	int minDist = lzc(d_sortedMortonCodes[i] ^ d_sortedMortonCodes[i - dir]);
-	int step = 2;
-	int start = i;
+	int dir = lzc(d_sortedMortonCodes[i] ^ d_sortedMortonCodes[i + 1])
+			- lzc(d_sortedMortonCodes[i] ^ d_sortedMortonCodes[i - 1]);
+	dir = dir < 0 ? -1 : 1;
+	int minDist = ((int)i - dir)>=0 ? lzc(d_sortedMortonCodes[i] ^ d_sortedMortonCodes[i - dir]) : -1;
 	int2 range;
-	while ((i + dir * step) < objCount
-			&& lzc(d_sortedMortonCodes[i] ^ d_sortedMortonCodes[i + dir * step])
-					> minDist)
-		step = step << 1; // exponential increase
-	step = step >> 1;
-	range.y = i + dir * step;
 
+	int step = 2;
+	while (((int)i + dir * step) < objCount && ((int)i + dir * step)>=0
+			&& lzc(d_sortedMortonCodes[i] ^ d_sortedMortonCodes[i + dir * step]) > minDist)
+		step = step << 1; // exponential increase
+	int start = i;
 	do {
 		step = (step + 1) >> 1; // exponential decrease
 		int newStart = start + step * dir; // proposed new position
@@ -264,8 +261,14 @@ __device__ int2 determineRange(unsigned int* d_sortedMortonCodes,
 						> minDist)
 			start = newStart; // accept proposal
 	} while (step > 1);
-	range.x = start;
 
+	if (start < i) {
+		range.x = start;
+		range.y = i;
+	} else {
+		range.y = start;
+		range.x = i;
+	}
 	return range;
 }
 
@@ -384,16 +387,17 @@ extern __shared__ float sharedData[];
 __global__ void prepareLeafs(unsigned int faceCount, unsigned int vertexCount,
 		unsigned int* d_faces, float* d_vertices, unsigned int* d_objectIds,
 		unsigned int* d_mortonCodes, AABoundingBox* d_aabbs) {
-	const unsigned int threads = blockDim.x * blockDim.y;
-	const unsigned int idx = threadIdx.x + blockDim.x * threadIdx.y;
-	for (unsigned int t = idx * 6; t < faceCount * 6; t += threads * 6) {
-		AABoundingBox aabb(getVector((d_faces[t] - 1) * 3, d_vertices),
-				getVector((d_faces[t + 1] - 1) * 3, d_vertices),
-				getVector((d_faces[t + 2] - 1) * 3, d_vertices));
-		d_objectIds[t / 6] = t / 6;
-		d_aabbs[t / 6] = aabb;
+	const unsigned int threads = blockDim.x;
+	const unsigned int idx = threadIdx.x;
+	//d_faces[t*6] - 1 getVector((2) * 3, d_vertices)
+	for (unsigned int t = idx; t < faceCount; t += threads) {
+		AABoundingBox aabb(getVector((d_faces[t * 6] - 1) * 3, d_vertices),
+				getVector((d_faces[t * 6 + 1] - 1) * 3, d_vertices),
+				getVector((d_faces[t * 6 + 2] - 1) * 3, d_vertices));
+		d_objectIds[t] = t;
+		d_aabbs[t] = aabb;
 		const Vector3& center = aabb.getCenter();
-		d_mortonCodes[t / 6] = morton3D(center.x, center.y, center.z);
+		d_mortonCodes[t] = morton3D(center.x, center.y, center.z);
 	}
 }
 
@@ -408,21 +412,20 @@ __global__ void createBVHTree(unsigned int* d_sortedObjectIds,
 		BVHNode leaf(d_aabbs[id]);
 		leaf.objectId = id;
 		leaf.isLeaf = true;
+		leaf.left = 1337;
+		leaf.right = 1337;
 		d_bvhNodes[i + objCount - 1] = leaf;
 	}
 	// Construct internal nodes.
 	for (unsigned int i = idx; i < objCount - 1; i += threads) {
 
 		// Find out which range of objects the node corresponds to.
-		/*int2 range = determineRange(d_sortedMortonCodes, objCount, i);
-		 int first = range.x;
-		 int last = range.y;
-		 */
+		int2 range = determineRange(d_sortedMortonCodes, objCount, i);
+		int first = range.x;
+		int last = range.y;
+
 		// Determine where to split the range.
-		//int split = findSplit(d_sortedMortonCodes, first, last);
-		int first = 0;
-		int last = 0;
-		int split = 0;
+		int split = findSplit(d_sortedMortonCodes, first, last);
 		unsigned int left;
 		if (split == first)
 			left = split + objCount - 1;
@@ -435,10 +438,11 @@ __global__ void createBVHTree(unsigned int* d_sortedObjectIds,
 		else
 			right = split + 1;
 
-		BVHNode internal(d_bvhNodes[0].aabb + d_bvhNodes[0].aabb);
+		BVHNode internal(d_bvhNodes[left].aabb + d_bvhNodes[right].aabb);
 		internal.left = left;
 		internal.right = right;
 		internal.isLeaf = false;
+		internal.objectId = 1337;
 		d_bvhNodes[i] = internal;
 	}
 }
@@ -544,7 +548,7 @@ extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
 	aligned_n_count += ALIGN - aligned_n_count % ALIGN;
 
 	//Calculate AABBs and morton codes
-	printf("%d\n",faceCount);
+	printf("%d\n", faceCount);
 	prepareLeafs<<<1, faceCount>>>(faceCount, vertexCount, d_faces, d_vertices,
 			d_objectIds, d_mortonCodes, d_aabbs);
 	cudaDeviceSynchronize();
@@ -552,10 +556,11 @@ extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
 	thrust::device_ptr<unsigned int> d_data_ptr(d_objectIds);
 	thrust::device_ptr<unsigned int> d_keys_ptr(d_mortonCodes);
 	thrust::sort_by_key(d_keys_ptr, d_keys_ptr + faceCount, d_data_ptr);
-	d_mortonCodes = thrust::raw_pointer_cast(d_data_ptr);
-	d_objectIds = thrust::raw_pointer_cast(d_keys_ptr);
+	d_mortonCodes = thrust::raw_pointer_cast(d_keys_ptr);
+	d_objectIds = thrust::raw_pointer_cast(d_data_ptr);
+	cudaDeviceSynchronize();
 	//Create the tree!
-	createBVHTree<<<1, faceCount * 2>>>(d_objectIds, d_mortonCodes, d_aabbs,
+	createBVHTree<<<1, faceCount>>>(d_objectIds, d_mortonCodes, d_aabbs,
 			faceCount, d_bvhNodes);
 	cudaDeviceSynchronize();
 	//Raycast

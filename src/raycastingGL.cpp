@@ -29,13 +29,14 @@ GLuint shader;
 //Host side scene definition arrays
 objLoader loader;
 float *d_normals, *d_vertices;
-unsigned int* d_faces, *d_objectIds, *d_mortonCodes, *h_mortonCodes, *h_objectIds;
-AABoundingBox* d_aabbs;
-BVHNode* d_bvhNodes;
-Light light(Vector3(1.0f, 1.0f, 1.0f), Power3(300.0f, 300.0f, 300.0f));
+unsigned int* d_faces, *d_objectIds, *d_mortonCodes, *h_mortonCodes,
+		*h_objectIds;
+AABoundingBox* d_aabbs, *h_aabbs;
+BVHNode* d_bvhNodes, *h_bvhNodes;
+Light light(Vector3(1.0f, 1.0f, 1.0f), Power3(100.0f, 100.0f, 100.0f));
 Camera cam(imageW, imageH, 1.0f, Vector3(0.0f, 0.0f, 0.0f));
 bool R = true;
-float angle = 0, anglestep=0.01f;
+float angle = 0, anglestep = 0.01f;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Main program
@@ -130,24 +131,36 @@ void displayFunc(void) {
 	//Run the kernel!
 
 	if (R) {
-		angle+=anglestep;
-		cam.setPosition(Vector3(cosf(angle)*8.0f, 0.0f, sinf(angle)*8.0f));
+		angle += anglestep;
+		cam.setPosition(Vector3(cosf(angle) * 8.0f, 0.0f, sinf(angle) * 8.0f));
 		cam.lookAt(Vector3(0.0f, 0.0f, 0.0f), Vector3(0.0f, 1.0f, 0.0f));
 	}
 	cuda_rayCasting(d_dst, imageW, imageH, cam, light, loader.faceCount,
 			loader.vertexCount, loader.normalCount, d_faces, d_vertices,
 			d_normals, d_objectIds, d_mortonCodes, d_aabbs, d_bvhNodes);
 	checkCudaErrors(
-					cudaMemcpy(h_mortonCodes, d_mortonCodes,
-							loader.faceCount * sizeof(unsigned int),
-							cudaMemcpyDeviceToHost));
+			cudaMemcpy(h_mortonCodes, d_mortonCodes,
+					loader.faceCount * sizeof(unsigned int),
+					cudaMemcpyDeviceToHost));
 	checkCudaErrors(
-					cudaMemcpy(h_objectIds, d_objectIds,
-							loader.faceCount * sizeof(unsigned int),
-							cudaMemcpyDeviceToHost));
-	for(int i=0;i<loader.faceCount;i++){
-		printf("%u %u\n",h_objectIds[i],h_mortonCodes[i]);
-		//printf("%f %f %f %f %f %f\n", h_leafs[i].aabb.minX, h_leafs[i].aabb.minY, h_leafs[i].aabb.minZ, h_leafs[i].aabb.maxX, h_leafs[i].aabb.maxY, h_leafs[i].aabb.maxZ);
+			cudaMemcpy(h_objectIds, d_objectIds,
+					loader.faceCount * sizeof(unsigned int),
+					cudaMemcpyDeviceToHost));
+	checkCudaErrors(
+			cudaMemcpy(h_aabbs, d_aabbs,
+					loader.faceCount * sizeof(AABoundingBox),
+					cudaMemcpyDeviceToHost));
+	checkCudaErrors(
+			cudaMemcpy(h_bvhNodes, d_bvhNodes,
+					(loader.faceCount * 2 - 1) * sizeof(BVHNode),
+					cudaMemcpyDeviceToHost));
+	for (int i = 0; i < loader.faceCount*2 -1; i++) {
+		//printf("%u %u\n", h_objectIds[i], h_mortonCodes[i]);
+		/*printf("%f %f %f %f %f %f\n", h_aabbs[h_objectIds[i]].minX,
+				h_aabbs[h_objectIds[i]].minY, h_aabbs[h_objectIds[i]].minZ,
+				h_aabbs[h_objectIds[i]].maxX, h_aabbs[h_objectIds[i]].maxY,
+				h_aabbs[h_objectIds[i]].maxZ);*/
+		printf("ID: %d\tIsLeaf: %d\tObjId: %u\tleft %d\tright %d\n", i, h_bvhNodes[i].isLeaf,h_bvhNodes[i].objectId,h_bvhNodes[i].left,h_bvhNodes[i].right);
 	}
 	getLastCudaError("Raycasting kernel execution failed.\n");
 	//////////////////////////////////////////////////////////////////////////////
@@ -254,10 +267,10 @@ void shutDown(unsigned char k, int /*x*/, int /*y*/) {
 		}
 		break;
 	case '+':
-		anglestep+=0.01;
+		anglestep += 0.01;
 		break;
 	case '-':
-		anglestep-=0.01;
+		anglestep -= 0.01;
 		break;
 	}
 }
@@ -383,7 +396,7 @@ int main(int argc, char **argv) {
 	initOpenGLBuffers();
 
 	//Let's parse our object!
-	if (loader.parseOBJ("data/teapot.obj")) {
+	if (loader.parseOBJ("data/box.obj")) {
 		//Allocating arrays for our data
 		checkCudaErrors(
 				cudaMalloc(&d_faces,
@@ -394,19 +407,24 @@ int main(int argc, char **argv) {
 				cudaMalloc(&d_vertices,
 						sizeof(float) * loader.vertexCount * 3));
 		checkCudaErrors(
-						cudaMalloc(&d_bvhNodes,
-								sizeof(BVHNode) * (loader.faceCount+loader.faceCount-1)));
+				cudaMalloc(&d_bvhNodes,
+						sizeof(BVHNode)
+								* (loader.faceCount + loader.faceCount - 1)));
 		checkCudaErrors(
 				cudaMalloc(&d_objectIds,
 						sizeof(unsigned int) * loader.faceCount));
 		checkCudaErrors(
-						cudaMalloc(&d_mortonCodes,
-								sizeof(unsigned int) * loader.faceCount));
+				cudaMalloc(&d_mortonCodes,
+						sizeof(unsigned int) * loader.faceCount));
 		checkCudaErrors(
-						cudaMalloc(&d_aabbs,
-								sizeof(AABoundingBox) * loader.faceCount));
-		h_mortonCodes = (unsigned int*)malloc(sizeof(unsigned int) * loader.faceCount);
-		h_objectIds = (unsigned int*)malloc(sizeof(unsigned int) * loader.faceCount);
+				cudaMalloc(&d_aabbs, sizeof(AABoundingBox) * loader.faceCount));
+		h_mortonCodes = (unsigned int*) malloc(
+				sizeof(unsigned int) * loader.faceCount);
+		h_objectIds = (unsigned int*) malloc(
+				sizeof(unsigned int) * loader.faceCount);
+		h_aabbs = (AABoundingBox*) malloc(
+				sizeof(AABoundingBox) * loader.faceCount);
+		h_bvhNodes = (BVHNode*) malloc(sizeof(BVHNode) * loader.faceCount * 2 - 1);
 		//Copying data to device
 		checkCudaErrors(
 				cudaMemcpy(d_faces, loader.triangles_arr,
@@ -422,7 +440,6 @@ int main(int argc, char **argv) {
 						cudaMemcpyHostToDevice));
 	} else
 		exit(EXIT_FAILURE);
-
 	printf("Starting GLUT main loop...\n");
 
 	glutDisplayFunc(displayFunc);
