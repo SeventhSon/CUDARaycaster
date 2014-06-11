@@ -138,7 +138,7 @@ void displayFunc(void) {
 	cuda_rayCasting(d_dst, imageW, imageH, cam, light, loader.faceCount,
 			loader.vertexCount, loader.normalCount, d_faces, d_vertices,
 			d_normals, d_objectIds, d_mortonCodes, d_aabbs, d_bvhNodes);
-	checkCudaErrors(
+	/*checkCudaErrors(
 			cudaMemcpy(h_mortonCodes, d_mortonCodes,
 					loader.faceCount * sizeof(unsigned int),
 					cudaMemcpyDeviceToHost));
@@ -150,22 +150,23 @@ void displayFunc(void) {
 			cudaMemcpy(h_aabbs, d_aabbs,
 					loader.faceCount * sizeof(AABoundingBox),
 					cudaMemcpyDeviceToHost));
-	checkCudaErrors(
-			cudaMemcpy(h_bvhNodes, d_bvhNodes,
-					(loader.faceCount * 2 - 1) * sizeof(BVHNode),
-					cudaMemcpyDeviceToHost));
-	for (int i = 0; i < loader.faceCount*2-1; i++) {
+	*///checkCudaErrors(
+	//		cudaMemcpy(h_bvhNodes, d_bvhNodes,
+	//				(loader.faceCount * 2 - 1) * sizeof(BVHNode),
+	//				cudaMemcpyDeviceToHost));
+	///for (int i = 0; i < loader.faceCount*2 -1; i++) {
 		/*printf("%u %u\n", h_objectIds[i], h_mortonCodes[i]);
 		printf("%f %f %f %f %f %f\n", h_aabbs[h_objectIds[i]].minX,
 				h_aabbs[h_objectIds[i]].minY, h_aabbs[h_objectIds[i]].minZ,
 				h_aabbs[h_objectIds[i]].maxX, h_aabbs[h_objectIds[i]].maxY,
 				h_aabbs[h_objectIds[i]].maxZ);*/
-		printf("ID: %d\tparent: %d\tvisited: %d\tIsLeaf: %d\tObjId: %u\tleft %d\tright %d\n", i, h_bvhNodes[i].parent, h_bvhNodes[i].visited, h_bvhNodes[i].isLeaf,h_bvhNodes[i].objectId,h_bvhNodes[i].left,h_bvhNodes[i].right);
-		printf("AABB %f %f %f %f %f %f\n",h_bvhNodes[i].aabb.minX,
+		//printf("ID: %d\tparent: %d\tvisited: %d\tIsLeaf: %d\tObjId: %u\tleft %d\tright %d\n", i, h_bvhNodes[i].parent, h_bvhNodes[i].visited, h_bvhNodes[i].isLeaf,h_bvhNodes[i].objectId,h_bvhNodes[i].left,h_bvhNodes[i].right);
+		/*printf("AABB %f %f %f %f %f %f\n",h_bvhNodes[i].aabb.minX,
 				h_bvhNodes[i].aabb.minY, h_bvhNodes[i].aabb.minZ,
 				h_bvhNodes[i].aabb.maxX, h_bvhNodes[i].aabb.maxY,
-				h_bvhNodes[i].aabb.maxZ);
-	}
+				h_bvhNodes[i].aabb.maxZ);*/
+
+	//}
 	getLastCudaError("Raycasting kernel execution failed.\n");
 	//////////////////////////////////////////////////////////////////////////////
 
@@ -400,7 +401,7 @@ int main(int argc, char **argv) {
 	initOpenGLBuffers();
 
 	//Let's parse our object!
-	if (loader.parseOBJ("data/boxes.obj")) {
+	if (loader.parseOBJ("data/sphere.obj")) {
 		//Allocating arrays for our data
 		checkCudaErrors(
 				cudaMalloc(&d_faces,

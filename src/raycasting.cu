@@ -242,8 +242,8 @@ __device__ int lzc(int x) {
 
 __device__ int2 determineRange(unsigned int* d_sortedMortonCodes,
 		unsigned int objCount, unsigned int i) {
-	int dir = lzc(d_sortedMortonCodes[i] ^ d_sortedMortonCodes[i + 1])
-			- lzc(d_sortedMortonCodes[i] ^ d_sortedMortonCodes[i - 1]);
+	int dir = i==0 ? 1 :lzc(d_sortedMortonCodes[i] ^ d_sortedMortonCodes[i + 1])
+				- lzc(d_sortedMortonCodes[i] ^ d_sortedMortonCodes[i - 1]);
 	dir = dir < 0 ? -1 : 1;
 	int minDist =
 			((int) i - dir) >= 0 ?
@@ -412,15 +412,12 @@ __device__ Vector3 getVector(unsigned int i, float* data) {
 // kernels
 ////////////////////////////////////////////////////////////////////////////////
 
-//Shared memory handle
-extern __shared__ float sharedData[];
-
 __global__ void prepareLeafs(unsigned int faceCount, unsigned int vertexCount,
 		unsigned int* d_faces, float* d_vertices, unsigned int* d_objectIds,
 		unsigned int* d_mortonCodes, AABoundingBox* d_aabbs) {
 	const unsigned int idx = threadIdx.x+blockIdx.x*blockDim.x;
-
 	if(idx<faceCount){
+
 		AABoundingBox aabb(getVector((d_faces[idx * 6] - 1) * 3, d_vertices),
 				getVector((d_faces[idx * 6 + 1] - 1) * 3, d_vertices),
 				getVector((d_faces[idx * 6 + 2] - 1) * 3, d_vertices));
@@ -435,34 +432,53 @@ __global__ void calculateBoundingBoxes(BVHNode* d_bvhNodes,
 		unsigned int objCount) {
 	const unsigned int idx = threadIdx.x+blockIdx.x*blockDim.x;
 	if (idx < objCount) {
-		BVHNode* current = &d_bvhNodes[d_bvhNodes[idx + objCount - 1].parent];
+		BVHNode* current = &d_bvhNodes[d_bvhNodes[idx+objCount-1].parent];
+		printf("%d \n",d_bvhNodes[idx+objCount-1].parent);
 		while (1) {
 			int old = atomicAdd(&(current->visited), 1);
-			if (old == 0)
-			break;
+			if (old == 0){
+				break;
+			}
 			current->aabb = d_bvhNodes[current->left].aabb
 					+ d_bvhNodes[current->right].aabb;
 			if (current->parent == -1)
 				break;
 			current = &d_bvhNodes[current->parent];
+
 		}
 	}
 }
+/*__global__ void allocateNodes(unsigned int* d_sortedObjectIds, AABoundingBox* d_aabbs,unsigned int objCount, BVHNode* d_bvhNodes){
+	const unsigned int nid = threadIdx.x;
+	const unsigned int threads = blockDim.x;
+	// Construct nodes
+	for(int i=nid;i<objCount;i+=threads){
+		unsigned int id = d_sortedObjectIds[nid];
+		BVHNode leaf(d_aabbs[id]);
+		leaf.objectId = id;
+		leaf.isLeaf = true;
+		d_bvhNodes[nid + objCount - 1] = leaf;
+		BVHNode internal;
+		internal.isLeaf = false;
+		if(nid<objCount-1)
+			d_bvhNodes[nid] = internal;
+	}
+}*/
 
 __global__ void createHierarchy(unsigned int* d_sortedObjectIds,
 		unsigned int* d_sortedMortonCodes, AABoundingBox* d_aabbs,
 		unsigned int objCount, BVHNode* d_bvhNodes) {
 	const unsigned int idx = threadIdx.x + blockDim.x * blockIdx.x;
-	// Construct leaf nodes.
-	if(idx< objCount){
+	if (idx < objCount) {
 		unsigned int id = d_sortedObjectIds[idx];
-		BVHNode leaf(d_aabbs[id]);
-		leaf.objectId = id;
-		leaf.isLeaf = true;
-		d_bvhNodes[idx + objCount - 1] = leaf;
+		d_bvhNodes[idx + objCount - 1].aabb = d_aabbs[id];
+		d_bvhNodes[idx + objCount - 1].objectId = id;
+		d_bvhNodes[idx + objCount - 1].isLeaf = true;
+		d_bvhNodes[idx + objCount - 1].parent = 66666;
+		d_bvhNodes[idx + objCount - 1].visited = 0;
 	}
 	// Construct internal nodes.
-	if(idx < objCount - 1) {
+	if (idx < objCount - 1) {
 
 		// Find out which range of objects the node corresponds to.
 		int2 range = determineRange(d_sortedMortonCodes, objCount, idx);
@@ -483,13 +499,14 @@ __global__ void createHierarchy(unsigned int* d_sortedObjectIds,
 		else
 			right = split + 1;
 
-		BVHNode internal;
-		internal.left = left;
-		internal.right = right;
-		internal.isLeaf = false;
+		d_bvhNodes[idx].left = left;
+		d_bvhNodes[idx].right = right;
+		d_bvhNodes[idx].isLeaf = false;
+		d_bvhNodes[idx].visited = 0;
 		if (idx == 0)
-			internal.parent = -1;
-		d_bvhNodes[idx] = internal;
+			d_bvhNodes[idx].parent = -1;
+		else
+			d_bvhNodes[idx].parent = 66666;
 		d_bvhNodes[left].parent = idx;
 		d_bvhNodes[right].parent = idx;
 	}
@@ -583,16 +600,9 @@ extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
 	dim3 threads(BLOCKDIM_X, BLOCKDIM_Y);
 	dim3 grid(iDivUp(imageW, BLOCKDIM_X), iDivUp(imageH, BLOCKDIM_Y));
 
-	unsigned int aligned_v_count = vertexCount * 3;
-	unsigned int aligned_n_count = normalCount * 3;
-	unsigned int aligned_f_count = faceCount * 6;
-	aligned_f_count += ALIGN - aligned_f_count % ALIGN;
-	aligned_v_count += ALIGN - aligned_v_count % ALIGN;
-	aligned_n_count += ALIGN - aligned_n_count % ALIGN;
-
 	//Calculate AABBs and morton codes for leaf nodes
-	printf("%d\n", faceCount);
-	prepareLeafs<<<2, 512>>>(faceCount, vertexCount, d_faces, d_vertices,
+	//printf("%d\n", faceCount);
+	prepareLeafs<<<1, faceCount>>>(faceCount, vertexCount, d_faces, d_vertices,
 			d_objectIds, d_mortonCodes, d_aabbs);
 	cudaDeviceSynchronize();
 	//Sort objects by morton codes
@@ -602,16 +612,15 @@ extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
 	d_mortonCodes = thrust::raw_pointer_cast(d_keys_ptr);
 	d_objectIds = thrust::raw_pointer_cast(d_data_ptr);
 	cudaDeviceSynchronize();
-	//Create hierarchy
-	createHierarchy<<<2, 512>>>(d_objectIds, d_mortonCodes, d_aabbs,
+	createHierarchy<<<1, faceCount>>>(d_objectIds, d_mortonCodes, d_aabbs,
 			faceCount, d_bvhNodes);
 	cudaDeviceSynchronize();
 	//Calculate bounding boxes for internal nodes
-	calculateBoundingBoxes<<<2, 512>>>(d_bvhNodes, faceCount);
-	/*cudaDeviceSynchronize();
+	calculateBoundingBoxes<<<1, faceCount>>>(d_bvhNodes, faceCount);
+	cudaDeviceSynchronize();
 	//Raycast
 	rayCast<<<grid, threads>>>(
 			d_dst, imageW, imageH, camera, light, faceCount, vertexCount,
-			normalCount, d_faces, d_vertices, d_normals,d_bvhNodes);*/
+			normalCount, d_faces, d_vertices, d_normals,d_bvhNodes);
 	cudaDeviceSynchronize();
 }
