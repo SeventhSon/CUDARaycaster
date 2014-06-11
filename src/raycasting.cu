@@ -245,12 +245,16 @@ __device__ int2 determineRange(unsigned int* d_sortedMortonCodes,
 	int dir = lzc(d_sortedMortonCodes[i] ^ d_sortedMortonCodes[i + 1])
 			- lzc(d_sortedMortonCodes[i] ^ d_sortedMortonCodes[i - 1]);
 	dir = dir < 0 ? -1 : 1;
-	int minDist = ((int)i - dir)>=0 ? lzc(d_sortedMortonCodes[i] ^ d_sortedMortonCodes[i - dir]) : -1;
+	int minDist =
+			((int) i - dir) >= 0 ?
+					lzc(d_sortedMortonCodes[i] ^ d_sortedMortonCodes[i - dir]) :
+					-1;
 	int2 range;
 
 	int step = 2;
-	while (((int)i + dir * step) < objCount && ((int)i + dir * step)>=0
-			&& lzc(d_sortedMortonCodes[i] ^ d_sortedMortonCodes[i + dir * step]) > minDist)
+	while (((int) i + dir * step) < objCount && ((int) i + dir * step) >= 0
+			&& lzc(d_sortedMortonCodes[i] ^ d_sortedMortonCodes[i + dir * step])
+					> minDist)
 		step = step << 1; // exponential increase
 	int start = i;
 	do {
@@ -307,7 +311,34 @@ __device__ int findSplit(unsigned int* sortedMortonCodes, int first, int last) {
 ////////////////////////////////////////////////////////////////////////////////
 // Raycasting device functions
 ////////////////////////////////////////////////////////////////////////////////
+__device__ bool rayAABBIntersect(Ray r, AABoundingBox aabb) {
+	Vector3 dirfrac;
+	dirfrac.x = 1.0f / r.direction().x;
+	dirfrac.y = 1.0f / r.direction().y;
+	dirfrac.z = 1.0f / r.direction().z;
+	// lb is the corner of AABB with minimal coordinates - left bottom, rt is maximal corner
+	// r.org is origin of ray
+	float t1 = (aabb.minX - r.origin().x) * dirfrac.x;
+	float t2 = (aabb.maxX - r.origin().x) * dirfrac.x;
+	float t3 = (aabb.minY - r.origin().y) * dirfrac.y;
+	float t4 = (aabb.maxY - r.origin().y) * dirfrac.y;
+	float t5 = (aabb.minZ - r.origin().z) * dirfrac.z;
+	float t6 = (aabb.maxZ - r.origin().z) * dirfrac.z;
 
+	float tmin = max(max(min(t1, t2), min(t3, t4)), min(t5, t6));
+	float tmax = min(min(max(t1, t2), max(t3, t4)), max(t5, t6));
+
+	// if tmax < 0, ray (line) is intersecting AABB, but whole AABB is behing us
+	if (tmax < 0) {
+		return false;
+	}
+
+	// if tmin > tmax, ray doesn't intersect AABB
+	if (tmin > tmax) {
+		return false;
+	}
+	return true;
+}
 __device__ float intersect(const Ray& R, const Triangle& T, float weight[3]) {
 	const Vector3& e1 = T.vertex(1) - T.vertex(0);
 	const Vector3& e2 = T.vertex(2) - T.vertex(0);
@@ -387,40 +418,54 @@ extern __shared__ float sharedData[];
 __global__ void prepareLeafs(unsigned int faceCount, unsigned int vertexCount,
 		unsigned int* d_faces, float* d_vertices, unsigned int* d_objectIds,
 		unsigned int* d_mortonCodes, AABoundingBox* d_aabbs) {
-	const unsigned int threads = blockDim.x;
-	const unsigned int idx = threadIdx.x;
-	//d_faces[t*6] - 1 getVector((2) * 3, d_vertices)
-	for (unsigned int t = idx; t < faceCount; t += threads) {
-		AABoundingBox aabb(getVector((d_faces[t * 6] - 1) * 3, d_vertices),
-				getVector((d_faces[t * 6 + 1] - 1) * 3, d_vertices),
-				getVector((d_faces[t * 6 + 2] - 1) * 3, d_vertices));
-		d_objectIds[t] = t;
-		d_aabbs[t] = aabb;
+	const unsigned int idx = threadIdx.x+blockIdx.x*blockDim.x;
+
+	if(idx<faceCount){
+		AABoundingBox aabb(getVector((d_faces[idx * 6] - 1) * 3, d_vertices),
+				getVector((d_faces[idx * 6 + 1] - 1) * 3, d_vertices),
+				getVector((d_faces[idx * 6 + 2] - 1) * 3, d_vertices));
+		d_objectIds[idx] = idx;
+		d_aabbs[idx] = aabb;
 		const Vector3& center = aabb.getCenter();
-		d_mortonCodes[t] = morton3D(center.x, center.y, center.z);
+		d_mortonCodes[idx] = morton3D(center.x, center.y, center.z);
 	}
 }
 
-__global__ void createBVHTree(unsigned int* d_sortedObjectIds,
+__global__ void calculateBoundingBoxes(BVHNode* d_bvhNodes,
+		unsigned int objCount) {
+	const unsigned int idx = threadIdx.x+blockIdx.x*blockDim.x;
+	if (idx < objCount) {
+		BVHNode* current = &d_bvhNodes[d_bvhNodes[idx + objCount - 1].parent];
+		while (1) {
+			int old = atomicAdd(&(current->visited), 1);
+			if (old == 0)
+			break;
+			current->aabb = d_bvhNodes[current->left].aabb
+					+ d_bvhNodes[current->right].aabb;
+			if (current->parent == -1)
+				break;
+			current = &d_bvhNodes[current->parent];
+		}
+	}
+}
+
+__global__ void createHierarchy(unsigned int* d_sortedObjectIds,
 		unsigned int* d_sortedMortonCodes, AABoundingBox* d_aabbs,
 		unsigned int objCount, BVHNode* d_bvhNodes) {
-	const unsigned int threads = blockDim.x * blockDim.y;
-	const unsigned int idx = threadIdx.x + blockDim.x * threadIdx.y;
+	const unsigned int idx = threadIdx.x + blockDim.x * blockIdx.x;
 	// Construct leaf nodes.
-	for (unsigned int i = idx; i < objCount; i += threads) {
-		unsigned int id = d_sortedObjectIds[i];
+	if(idx< objCount){
+		unsigned int id = d_sortedObjectIds[idx];
 		BVHNode leaf(d_aabbs[id]);
 		leaf.objectId = id;
 		leaf.isLeaf = true;
-		leaf.left = 1337;
-		leaf.right = 1337;
-		d_bvhNodes[i + objCount - 1] = leaf;
+		d_bvhNodes[idx + objCount - 1] = leaf;
 	}
 	// Construct internal nodes.
-	for (unsigned int i = idx; i < objCount - 1; i += threads) {
+	if(idx < objCount - 1) {
 
 		// Find out which range of objects the node corresponds to.
-		int2 range = determineRange(d_sortedMortonCodes, objCount, i);
+		int2 range = determineRange(d_sortedMortonCodes, objCount, idx);
 		int first = range.x;
 		int last = range.y;
 
@@ -438,65 +483,63 @@ __global__ void createBVHTree(unsigned int* d_sortedObjectIds,
 		else
 			right = split + 1;
 
-		BVHNode internal(d_bvhNodes[left].aabb + d_bvhNodes[right].aabb);
+		BVHNode internal;
 		internal.left = left;
 		internal.right = right;
 		internal.isLeaf = false;
-		internal.objectId = 1337;
-		d_bvhNodes[i] = internal;
+		if (idx == 0)
+			internal.parent = -1;
+		d_bvhNodes[idx] = internal;
+		d_bvhNodes[left].parent = idx;
+		d_bvhNodes[right].parent = idx;
 	}
 }
 
 __global__ void rayCast(TColor *dst, int imageW, int imageH, Camera camera,
 		Light light, unsigned int faceCount, unsigned int vertexCount,
 		unsigned int normalCount, unsigned int* d_faces, float* d_vertices,
-		float*d_normals) {
+		float*d_normals, BVHNode* d_bvhNodes) {
 	//Global x, y image coordinates
 	const unsigned int ix = blockDim.x * blockIdx.x + threadIdx.x;
 	const unsigned int iy = blockDim.y * blockIdx.y + threadIdx.y;
 	//Number of threads in a block
-	const unsigned int threads = blockDim.x * blockDim.y;
-	//The serial id of a thread in its block
-	const unsigned int serialId = threadIdx.x + threadIdx.y * blockDim.x;
 
-	//Define sharedMemory array handlers for conviniece
-	float* sh_vertices = (float*) &sharedData;
-	float* sh_normals = (float*) &sh_vertices[vertexCount * 3 + ALIGN
-			- (vertexCount * 3) % ALIGN];
-	unsigned int* sh_faces = (unsigned int*) &sh_normals[normalCount * 3 + ALIGN
-			- (normalCount * 3) % ALIGN];
-
-	//Loading triangle data to sharedMemory
-	for (int i = serialId; i < vertexCount * 3; i += threads)
-		sh_vertices[i] = d_vertices[i];
-	for (int i = serialId; i < normalCount * 3; i += threads)
-		sh_normals[i] = d_normals[i];
-	for (int i = serialId; i < faceCount * 6; i += threads)
-		sh_faces[i] = d_faces[i];
-	//Wait for everyone to be ready
-	__syncthreads();
-
-	Triangle T;
+	Triangle triangle;
 	//Color of our pixel
-	Radiance3 L_o(0.04f, 0.04f, 0.04f);
-	const Ray& R = camera.computeEyeRay(ix + 0.5f, iy + 0.5f, imageW, imageH);
+	Radiance3 L_o(0.08f, 0.08f, 0.08f);
+	const Ray& ray = camera.computeEyeRay(ix + 0.5f, iy + 0.5f, imageW, imageH);
 	//Now find the closest triangle that intersects with our ray
 	float distance = INFINITY;
-	for (unsigned int t = 0; t < faceCount * 6; t += 6) {
-		//Construct a triangle from sharedMemory based on face index and its data.
-		//Each face is composed of 6 floats (3 vertex indices, 3 normal indices).
-		//Each vertex and normal is composed of 3 floats (x,y,z) and reside in their
-		//respective arrays sh_vertices, sh_normals, use getVector to grab data
-		T.load(getVector((sh_faces[t] - 1) * 3, sh_vertices),
-				getVector((sh_faces[t + 1] - 1) * 3, sh_vertices),
-				getVector((sh_faces[t + 2] - 1) * 3, sh_vertices),
-				getVector((sh_faces[t + 3] - 1) * 3, sh_normals),
-				getVector((sh_faces[t + 4] - 1) * 3, sh_normals),
-				getVector((sh_faces[t + 5] - 1) * 3, sh_normals),
-				BSDF(Color3(0.2f, 1.0f, 0.2f), Color3(0.2f, 0.2f, 0.2f),
-						100.0f));
-		//Try this triangle and our ray
-		sampleRayTriangle(R, T, L_o, distance, light);
+	int stack[128];
+	int stackIdx = 0;
+	stack[stackIdx++] = 0; // index to the first BVH node
+	while (stackIdx) {
+		BVHNode* current = &d_bvhNodes[stack[stackIdx - 1]];
+		stackIdx--;
+		if (!current->isLeaf) {
+			if (rayAABBIntersect(ray, current->aabb)) {
+				stack[stackIdx++] = current->left;
+				stack[stackIdx++] = current->right;
+			}
+		} else {
+			// Leaf node
+			triangle.load(
+					getVector((d_faces[current->objectId * 6] - 1) * 3,
+							d_vertices),
+					getVector((d_faces[current->objectId * 6 + 1] - 1) * 3,
+							d_vertices),
+					getVector((d_faces[current->objectId * 6 + 2] - 1) * 3,
+							d_vertices),
+					getVector((d_faces[current->objectId * 6 + 3] - 1) * 3,
+							d_normals),
+					getVector((d_faces[current->objectId * 6 + 4] - 1) * 3,
+							d_normals),
+					getVector((d_faces[current->objectId * 6 + 5] - 1) * 3,
+							d_normals),
+					BSDF(Color3(0.2f, 0.8f, 0.2f), Color3(0.2f, 0.2f, 0.2f),
+							80.0f));
+			sampleRayTriangle(ray, triangle, L_o, distance, light);
+		}
 	}
 	//Draw our pixel if we are not outside of the buffer!
 	if (ix < imageW && iy < imageH) {
@@ -547,9 +590,9 @@ extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
 	aligned_v_count += ALIGN - aligned_v_count % ALIGN;
 	aligned_n_count += ALIGN - aligned_n_count % ALIGN;
 
-	//Calculate AABBs and morton codes
+	//Calculate AABBs and morton codes for leaf nodes
 	printf("%d\n", faceCount);
-	prepareLeafs<<<1, faceCount>>>(faceCount, vertexCount, d_faces, d_vertices,
+	prepareLeafs<<<2, 512>>>(faceCount, vertexCount, d_faces, d_vertices,
 			d_objectIds, d_mortonCodes, d_aabbs);
 	cudaDeviceSynchronize();
 	//Sort objects by morton codes
@@ -559,15 +602,16 @@ extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
 	d_mortonCodes = thrust::raw_pointer_cast(d_keys_ptr);
 	d_objectIds = thrust::raw_pointer_cast(d_data_ptr);
 	cudaDeviceSynchronize();
-	//Create the tree!
-	createBVHTree<<<1, faceCount>>>(d_objectIds, d_mortonCodes, d_aabbs,
+	//Create hierarchy
+	createHierarchy<<<2, 512>>>(d_objectIds, d_mortonCodes, d_aabbs,
 			faceCount, d_bvhNodes);
 	cudaDeviceSynchronize();
+	//Calculate bounding boxes for internal nodes
+	calculateBoundingBoxes<<<2, 512>>>(d_bvhNodes, faceCount);
+	/*cudaDeviceSynchronize();
 	//Raycast
-	rayCast<<<grid, threads,
-			(aligned_f_count * sizeof(int)
-					+ (aligned_v_count + aligned_n_count) * sizeof(float))>>>(
+	rayCast<<<grid, threads>>>(
 			d_dst, imageW, imageH, camera, light, faceCount, vertexCount,
-			normalCount, d_faces, d_vertices, d_normals);
+			normalCount, d_faces, d_vertices, d_normals,d_bvhNodes);*/
 	cudaDeviceSynchronize();
 }

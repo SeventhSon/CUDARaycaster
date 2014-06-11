@@ -166,6 +166,9 @@ class AABoundingBox{
 public:
 	float minX, minY, minZ;
 	float maxX, maxY, maxZ;
+	CUDA_CALLABLE_MEMBER AABoundingBox(){
+
+	}
 	CUDA_CALLABLE_MEMBER AABoundingBox(float minX,float minY,float minZ,float maxX, float maxY, float maxZ) :
 		minX(minX),minY(minY),minZ(minZ),maxX(maxX),maxY(maxY),maxZ(maxZ){
 
@@ -218,8 +221,12 @@ public:
 	AABoundingBox aabb;
 	bool isLeaf;
 	unsigned int objectId;
-	int left, right;
-	CUDA_CALLABLE_MEMBER BVHNode(AABoundingBox aabb): aabb(aabb){
+	int left, right, parent;
+	int visited;
+	CUDA_CALLABLE_MEMBER BVHNode(AABoundingBox aabb): visited(0),aabb(aabb){
+
+	}
+	CUDA_CALLABLE_MEMBER BVHNode():visited(0){
 
 	}
 };

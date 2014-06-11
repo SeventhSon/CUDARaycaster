@@ -154,13 +154,17 @@ void displayFunc(void) {
 			cudaMemcpy(h_bvhNodes, d_bvhNodes,
 					(loader.faceCount * 2 - 1) * sizeof(BVHNode),
 					cudaMemcpyDeviceToHost));
-	for (int i = 0; i < loader.faceCount*2 -1; i++) {
-		//printf("%u %u\n", h_objectIds[i], h_mortonCodes[i]);
-		/*printf("%f %f %f %f %f %f\n", h_aabbs[h_objectIds[i]].minX,
+	for (int i = 0; i < loader.faceCount*2-1; i++) {
+		/*printf("%u %u\n", h_objectIds[i], h_mortonCodes[i]);
+		printf("%f %f %f %f %f %f\n", h_aabbs[h_objectIds[i]].minX,
 				h_aabbs[h_objectIds[i]].minY, h_aabbs[h_objectIds[i]].minZ,
 				h_aabbs[h_objectIds[i]].maxX, h_aabbs[h_objectIds[i]].maxY,
 				h_aabbs[h_objectIds[i]].maxZ);*/
-		printf("ID: %d\tIsLeaf: %d\tObjId: %u\tleft %d\tright %d\n", i, h_bvhNodes[i].isLeaf,h_bvhNodes[i].objectId,h_bvhNodes[i].left,h_bvhNodes[i].right);
+		printf("ID: %d\tparent: %d\tvisited: %d\tIsLeaf: %d\tObjId: %u\tleft %d\tright %d\n", i, h_bvhNodes[i].parent, h_bvhNodes[i].visited, h_bvhNodes[i].isLeaf,h_bvhNodes[i].objectId,h_bvhNodes[i].left,h_bvhNodes[i].right);
+		printf("AABB %f %f %f %f %f %f\n",h_bvhNodes[i].aabb.minX,
+				h_bvhNodes[i].aabb.minY, h_bvhNodes[i].aabb.minZ,
+				h_bvhNodes[i].aabb.maxX, h_bvhNodes[i].aabb.maxY,
+				h_bvhNodes[i].aabb.maxZ);
 	}
 	getLastCudaError("Raycasting kernel execution failed.\n");
 	//////////////////////////////////////////////////////////////////////////////
@@ -396,7 +400,7 @@ int main(int argc, char **argv) {
 	initOpenGLBuffers();
 
 	//Let's parse our object!
-	if (loader.parseOBJ("data/box.obj")) {
+	if (loader.parseOBJ("data/boxes.obj")) {
 		//Allocating arrays for our data
 		checkCudaErrors(
 				cudaMalloc(&d_faces,
