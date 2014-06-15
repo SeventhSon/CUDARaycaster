@@ -165,7 +165,7 @@ CUDA_CALLABLE_MEMBER Ray Camera::computeEyeRay(float x, float y, int width,
 		int height) {
 	const float aspect = float(height) / width;
 
-	const float s = 1.0f * fieldOfView;
+	const float s = fieldOfView;
 	Vector3 image_point = right * (x / width - 0.5f) * s
 			+ up * (y / height - 0.5f) * aspect * s + position + direction;
 	Vector3 ray_direction = image_point - position;
@@ -183,8 +183,8 @@ CUDA_CALLABLE_MEMBER void Camera::lookAt(const Vector3& point,
 }
 
 CUDA_CALLABLE_MEMBER Vector3 AABoundingBox::getCenter() const {
-	return Vector3((maxX - minX) * 0.5f, (maxY - minY) * 0.5f,
-			(maxZ - minZ) * 0.5f);
+	return Vector3((maxX + minX) * 0.5f, (maxY + minY) * 0.5f,
+			(maxZ + minZ) * 0.5f);
 }
 
 CUDA_CALLABLE_MEMBER const AABoundingBox AABoundingBox::operator+(
@@ -215,7 +215,7 @@ __device__ unsigned int morton3D(float x, float y, float z) {
 	unsigned int xx = expandBits((unsigned int) x);
 	unsigned int yy = expandBits((unsigned int) y);
 	unsigned int zz = expandBits((unsigned int) z);
-	return xx * 4 + yy * 2 + zz;
+	return (xx << 2) + (yy << 1) + zz;
 }
 
 __device__ int ones32(unsigned int x) {
@@ -231,7 +231,7 @@ __device__ int ones32(unsigned int x) {
 	return (x & 0x0000003f);
 }
 
-__device__ int lzc(int x) {
+__device__ int lzc(unsigned int x) {
 	x |= (x >> 1);
 	x |= (x >> 2);
 	x |= (x >> 4);
@@ -240,28 +240,43 @@ __device__ int lzc(int x) {
 	return (32 - ones32(x));
 }
 
+__device__ int commonPrefixCount(unsigned int* d_sortedMortonCodes,
+		unsigned int i, unsigned int j) {
+	if (d_sortedMortonCodes[i] == d_sortedMortonCodes[j])
+		return lzc(i ^ j);
+	return lzc(d_sortedMortonCodes[i] ^ d_sortedMortonCodes[j]);
+}
+
 __device__ int2 determineRange(unsigned int* d_sortedMortonCodes,
-		unsigned int objCount, unsigned int i) {
-	int dir = i==0 ? 1 :lzc(d_sortedMortonCodes[i] ^ d_sortedMortonCodes[i + 1])
-				- lzc(d_sortedMortonCodes[i] ^ d_sortedMortonCodes[i - 1]);
-	dir = dir < 0 ? -1 : 1;
-	int minDist =
-			((int) i - dir) >= 0 ?
-					lzc(d_sortedMortonCodes[i] ^ d_sortedMortonCodes[i - dir]) :
-					-1;
+		unsigned int objCount, int i) {
+	int dir, minDist;
+	if (i == 0) {
+		dir = 1;
+		minDist = -1;
+	} else {
+		dir = commonPrefixCount(d_sortedMortonCodes, i, i + 1)
+				- commonPrefixCount(d_sortedMortonCodes, i, i - 1);
+		dir = dir < 0 ? -1 : 1;
+		minDist = commonPrefixCount(d_sortedMortonCodes, i, i - dir);
+	}
 	int2 range;
 
 	int step = 2;
-	while (((int) i + dir * step) < objCount && ((int) i + dir * step) >= 0
-			&& lzc(d_sortedMortonCodes[i] ^ d_sortedMortonCodes[i + dir * step])
-					> minDist)
-		step = step << 1; // exponential increase
+	while (1) {
+		int newPos = (int) i + dir * step;
+		if (newPos < objCount && newPos >= 0
+				&& commonPrefixCount(d_sortedMortonCodes, i, newPos) > minDist)
+			step = step << 1; // exponential increase
+		else
+			break;
+	}
+
 	int start = i;
 	do {
 		step = (step + 1) >> 1; // exponential decrease
 		int newStart = start + step * dir; // proposed new position
-		if (newStart < objCount
-				&& lzc(d_sortedMortonCodes[i] ^ d_sortedMortonCodes[newStart])
+		if (newStart < objCount && newStart >= 0
+				&& commonPrefixCount(d_sortedMortonCodes, i, newStart)
 						> minDist)
 			start = newStart; // accept proposal
 	} while (step > 1);
@@ -270,8 +285,8 @@ __device__ int2 determineRange(unsigned int* d_sortedMortonCodes,
 		range.x = start;
 		range.y = i;
 	} else {
-		range.y = start;
 		range.x = i;
+		range.y = start;
 	}
 	return range;
 }
@@ -285,8 +300,7 @@ __device__ int findSplit(unsigned int* sortedMortonCodes, int first, int last) {
 		return (first + last) >> 1;
 
 	// Calculate the number of highest bits that are the same
-	// for all objects, using the count-leading-zeros intrinsic.
-	int commonPrefix = lzc(firstCode ^ lastCode);
+	int commonPrefix = commonPrefixCount(sortedMortonCodes, first, last);
 
 	// Use binary search to find where the next bit differs.
 	// Specifically, we are looking for the highest object that
@@ -298,12 +312,8 @@ __device__ int findSplit(unsigned int* sortedMortonCodes, int first, int last) {
 		step = (step + 1) >> 1; // exponential decrease
 		int newSplit = split + step; // proposed new position
 
-		if (newSplit < last) {
-			unsigned int splitCode = sortedMortonCodes[newSplit];
-			int splitPrefix = lzc(firstCode ^ splitCode);
-			if (splitPrefix > commonPrefix)
-				split = newSplit; // accept proposal
-		}
+		if (newSplit < last && commonPrefixCount(sortedMortonCodes, first,	newSplit) > commonPrefix)
+			split = newSplit; // accept proposal
 	} while (step > 1);
 
 	return split;
@@ -376,7 +386,7 @@ __device__ void shade(const Triangle& T, const Vector3& P, const Vector3& n,
 	const Vector3& w_i = offset / distanceToLight;
 
 	// Scatter the light
-	L_o = (light.power / (4.0f * PI * distanceToLight * distanceToLight))
+	L_o = (light.power / (distanceToLight * distanceToLight))
 			* T.bsdf().evaluateFiniteScatteringDensity(w_i, w_o, n)
 			* max(0.0, w_i.dot(n));
 }
@@ -412,31 +422,38 @@ __device__ Vector3 getVector(unsigned int i, float* data) {
 // kernels
 ////////////////////////////////////////////////////////////////////////////////
 
-__global__ void prepareLeafs(unsigned int faceCount, unsigned int vertexCount,
-		unsigned int* d_faces, float* d_vertices, unsigned int* d_objectIds,
-		unsigned int* d_mortonCodes, AABoundingBox* d_aabbs) {
-	const unsigned int idx = threadIdx.x+blockIdx.x*blockDim.x;
-	if(idx<faceCount){
-
+__global__ void calculateLeafAABBs(unsigned int objCount, unsigned int* d_faces,
+		float* d_vertices, unsigned int* d_objectIds, AABoundingBox* d_aabbs) {
+	const unsigned int idx = threadIdx.x + blockIdx.x * blockDim.x;
+	if (idx < objCount) {
 		AABoundingBox aabb(getVector((d_faces[idx * 6] - 1) * 3, d_vertices),
 				getVector((d_faces[idx * 6 + 1] - 1) * 3, d_vertices),
 				getVector((d_faces[idx * 6 + 2] - 1) * 3, d_vertices));
 		d_objectIds[idx] = idx;
 		d_aabbs[idx] = aabb;
-		const Vector3& center = aabb.getCenter();
-		d_mortonCodes[idx] = morton3D(center.x, center.y, center.z);
 	}
 }
 
-__global__ void calculateBoundingBoxes(BVHNode* d_bvhNodes,
-		unsigned int objCount) {
-	const unsigned int idx = threadIdx.x+blockIdx.x*blockDim.x;
+__global__ void assignMortonCodes(unsigned int* d_mortonCodes,
+		AABoundingBox* d_aabbs, unsigned int objCount, Vector3 sceneMin,
+		Vector3 sceneMax) {
+	const unsigned int idx = threadIdx.x + blockIdx.x * blockDim.x;
 	if (idx < objCount) {
-		BVHNode* current = &d_bvhNodes[d_bvhNodes[idx+objCount-1].parent];
-		printf("%d \n",d_bvhNodes[idx+objCount-1].parent);
+
+		const Vector3& relativeCenter = d_aabbs[idx].getCenter() - sceneMin;
+		const Vector3& sceneSize = sceneMax - sceneMin;
+		d_mortonCodes[idx] = morton3D(relativeCenter.x / sceneSize.x,
+				relativeCenter.y / sceneSize.y, relativeCenter.z / sceneSize.z);
+	}
+}
+
+__global__ void calculateTreeAABBs(BVHNode* d_bvhNodes, unsigned int objCount) {
+	const unsigned int idx = threadIdx.x + blockIdx.x * blockDim.x;
+	if (idx < objCount) {
+		BVHNode* current = &d_bvhNodes[d_bvhNodes[idx + objCount - 1].parent];
 		while (1) {
 			int old = atomicAdd(&(current->visited), 1);
-			if (old == 0){
+			if (old == 0) {
 				break;
 			}
 			current->aabb = d_bvhNodes[current->left].aabb
@@ -448,22 +465,6 @@ __global__ void calculateBoundingBoxes(BVHNode* d_bvhNodes,
 		}
 	}
 }
-/*__global__ void allocateNodes(unsigned int* d_sortedObjectIds, AABoundingBox* d_aabbs,unsigned int objCount, BVHNode* d_bvhNodes){
-	const unsigned int nid = threadIdx.x;
-	const unsigned int threads = blockDim.x;
-	// Construct nodes
-	for(int i=nid;i<objCount;i+=threads){
-		unsigned int id = d_sortedObjectIds[nid];
-		BVHNode leaf(d_aabbs[id]);
-		leaf.objectId = id;
-		leaf.isLeaf = true;
-		d_bvhNodes[nid + objCount - 1] = leaf;
-		BVHNode internal;
-		internal.isLeaf = false;
-		if(nid<objCount-1)
-			d_bvhNodes[nid] = internal;
-	}
-}*/
 
 __global__ void createHierarchy(unsigned int* d_sortedObjectIds,
 		unsigned int* d_sortedMortonCodes, AABoundingBox* d_aabbs,
@@ -474,8 +475,6 @@ __global__ void createHierarchy(unsigned int* d_sortedObjectIds,
 		d_bvhNodes[idx + objCount - 1].aabb = d_aabbs[id];
 		d_bvhNodes[idx + objCount - 1].objectId = id;
 		d_bvhNodes[idx + objCount - 1].isLeaf = true;
-		d_bvhNodes[idx + objCount - 1].parent = 66666;
-		d_bvhNodes[idx + objCount - 1].visited = 0;
 	}
 	// Construct internal nodes.
 	if (idx < objCount - 1) {
@@ -501,14 +500,16 @@ __global__ void createHierarchy(unsigned int* d_sortedObjectIds,
 
 		d_bvhNodes[idx].left = left;
 		d_bvhNodes[idx].right = right;
+		d_bvhNodes[idx].start = first;
+		d_bvhNodes[idx].stop = last;
 		d_bvhNodes[idx].isLeaf = false;
 		d_bvhNodes[idx].visited = 0;
+		d_bvhNodes[idx].objectId = 0;
 		if (idx == 0)
 			d_bvhNodes[idx].parent = -1;
-		else
-			d_bvhNodes[idx].parent = 66666;
 		d_bvhNodes[left].parent = idx;
 		d_bvhNodes[right].parent = idx;
+
 	}
 }
 
@@ -533,31 +534,32 @@ __global__ void rayCast(TColor *dst, int imageW, int imageH, Camera camera,
 	while (stackIdx) {
 		BVHNode* current = &d_bvhNodes[stack[stackIdx - 1]];
 		stackIdx--;
-		if (!current->isLeaf) {
-			if (rayAABBIntersect(ray, current->aabb)) {
+		if (rayAABBIntersect(ray, current->aabb)) {
+			if (!current->isLeaf) {
 				stack[stackIdx++] = current->left;
 				stack[stackIdx++] = current->right;
+			} else {
+				// Leaf node
+				triangle.load(
+						getVector((d_faces[current->objectId * 6] - 1) * 3,
+								d_vertices),
+						getVector((d_faces[current->objectId * 6 + 1] - 1) * 3,
+								d_vertices),
+						getVector((d_faces[current->objectId * 6 + 2] - 1) * 3,
+								d_vertices),
+						getVector((d_faces[current->objectId * 6 + 3] - 1) * 3,
+								d_normals),
+						getVector((d_faces[current->objectId * 6 + 4] - 1) * 3,
+								d_normals),
+						getVector((d_faces[current->objectId * 6 + 5] - 1) * 3,
+								d_normals),
+						BSDF(Color3(0.4f, 0.8f, 0.2f), Color3(0.2f, 0.2f, 0.2f),
+								80.0f));
+				sampleRayTriangle(ray, triangle, L_o, distance, light);
 			}
-		} else {
-			// Leaf node
-			triangle.load(
-					getVector((d_faces[current->objectId * 6] - 1) * 3,
-							d_vertices),
-					getVector((d_faces[current->objectId * 6 + 1] - 1) * 3,
-							d_vertices),
-					getVector((d_faces[current->objectId * 6 + 2] - 1) * 3,
-							d_vertices),
-					getVector((d_faces[current->objectId * 6 + 3] - 1) * 3,
-							d_normals),
-					getVector((d_faces[current->objectId * 6 + 4] - 1) * 3,
-							d_normals),
-					getVector((d_faces[current->objectId * 6 + 5] - 1) * 3,
-							d_normals),
-					BSDF(Color3(0.2f, 0.8f, 0.2f), Color3(0.2f, 0.2f, 0.2f),
-							80.0f));
-			sampleRayTriangle(ray, triangle, L_o, distance, light);
 		}
 	}
+	//__syncthreads();
 	//Draw our pixel if we are not outside of the buffer!
 	if (ix < imageW && iy < imageH) {
 		dst[imageW * iy + ix] = make_color(min(L_o.r, 1.0f), min(L_o.g, 1.0f),
@@ -596,14 +598,36 @@ extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
 		unsigned int vertexCount, unsigned int normalCount,
 		unsigned int* d_faces, float* d_vertices, float*d_normals,
 		unsigned int* d_objectIds, unsigned int* d_mortonCodes,
-		AABoundingBox* d_aabbs, BVHNode* d_bvhNodes) {
+		AABoundingBox* d_aabbs, BVHNode* d_bvhNodes, AABoundingBox* h_aabbs) {
 	dim3 threads(BLOCKDIM_X, BLOCKDIM_Y);
 	dim3 grid(iDivUp(imageW, BLOCKDIM_X), iDivUp(imageH, BLOCKDIM_Y));
 
 	//Calculate AABBs and morton codes for leaf nodes
-	//printf("%d\n", faceCount);
-	prepareLeafs<<<1, faceCount>>>(faceCount, vertexCount, d_faces, d_vertices,
-			d_objectIds, d_mortonCodes, d_aabbs);
+	printf("%d\n", faceCount);
+	calculateLeafAABBs<<<2, 512>>>(faceCount, d_faces, d_vertices,
+			d_objectIds, d_aabbs);
+	cudaMemcpy(h_aabbs, d_aabbs, faceCount * sizeof(AABoundingBox),
+			cudaMemcpyDeviceToHost);
+	Vector3 sceneMin(INFINITY, INFINITY, INFINITY), sceneMax(-INFINITY,
+			-INFINITY, -INFINITY);
+	for (int i = 0; i < faceCount; i++) {
+		AABoundingBox aabb = h_aabbs[i];
+		if (aabb.minX < sceneMin.x)
+			sceneMin.x = aabb.minX;
+		if (aabb.minY < sceneMin.y)
+			sceneMin.y = aabb.minY;
+		if (aabb.minZ < sceneMin.z)
+			sceneMin.z = aabb.minZ;
+
+		if (aabb.maxX > sceneMax.x)
+			sceneMax.x = aabb.maxX;
+		if (aabb.maxY > sceneMax.y)
+			sceneMax.y = aabb.maxY;
+		if (aabb.maxZ > sceneMax.z)
+			sceneMax.z = aabb.maxZ;
+	}
+	assignMortonCodes<<<2, 512>>>(d_mortonCodes, d_aabbs, faceCount,
+			sceneMin, sceneMax);
 	cudaDeviceSynchronize();
 	//Sort objects by morton codes
 	thrust::device_ptr<unsigned int> d_data_ptr(d_objectIds);
@@ -612,11 +636,11 @@ extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
 	d_mortonCodes = thrust::raw_pointer_cast(d_keys_ptr);
 	d_objectIds = thrust::raw_pointer_cast(d_data_ptr);
 	cudaDeviceSynchronize();
-	createHierarchy<<<1, faceCount>>>(d_objectIds, d_mortonCodes, d_aabbs,
+	createHierarchy<<<2, 512>>>(d_objectIds, d_mortonCodes, d_aabbs,
 			faceCount, d_bvhNodes);
 	cudaDeviceSynchronize();
 	//Calculate bounding boxes for internal nodes
-	calculateBoundingBoxes<<<1, faceCount>>>(d_bvhNodes, faceCount);
+	calculateTreeAABBs<<<2, 512>>>(d_bvhNodes, faceCount);
 	cudaDeviceSynchronize();
 	//Raycast
 	rayCast<<<grid, threads>>>(

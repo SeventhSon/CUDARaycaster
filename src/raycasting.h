@@ -4,7 +4,7 @@
 typedef unsigned int TColor;
 
 #define BLOCKDIM_X 16
-#define BLOCKDIM_Y 16
+#define BLOCKDIM_Y 8
 
 #ifndef MAX
 #define MAX(a,b) ((a < b) ? b : a)
@@ -24,6 +24,6 @@ extern "C" cudaError_t CUDA_FreeArray();
 extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
 		Camera camera, Light light, unsigned int faceCount, unsigned int vertexCount,
 		unsigned int normalCount,unsigned int* d_faces,float* d_vertices, float*d_normals,
-		unsigned int* d_objectIds, unsigned int* d_mortonCodes,AABoundingBox* d_aabbs, BVHNode* d_bvhNodes);
+		unsigned int* d_objectIds, unsigned int* d_mortonCodes,AABoundingBox* d_aabbs, BVHNode* d_bvhNodes, AABoundingBox* h_aabbs);
 
 #endif
