@@ -401,7 +401,7 @@ int main(int argc, char **argv) {
 	initOpenGLBuffers();
 
 	//Let's parse our object!
-	if (loader.parseOBJ("data/dragon.obj")) {
+	if (loader.parseOBJ("data/suzzane2.obj")) {
 		//Allocating arrays for our data
 		checkCudaErrors(
 				cudaMalloc(&d_faces,

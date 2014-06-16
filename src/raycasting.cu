@@ -243,7 +243,7 @@ __device__ int lzc(unsigned int x) {
 __device__ int commonPrefixCount(unsigned int* d_sortedMortonCodes,
 		unsigned int i, unsigned int j) {
 	if (d_sortedMortonCodes[i] == d_sortedMortonCodes[j])
-		return lzc(i ^ j);//this is probably wrong, fix
+		return lzc(i ^ j); //this is probably wrong, fix
 	return lzc(d_sortedMortonCodes[i] ^ d_sortedMortonCodes[j]);
 }
 
@@ -312,7 +312,9 @@ __device__ int findSplit(unsigned int* sortedMortonCodes, int first, int last) {
 		step = (step + 1) >> 1; // exponential decrease
 		int newSplit = split + step; // proposed new position
 
-		if (newSplit < last && commonPrefixCount(sortedMortonCodes, first,	newSplit) > commonPrefix)
+		if (newSplit < last
+				&& commonPrefixCount(sortedMortonCodes, first, newSplit)
+						> commonPrefix)
 			split = newSplit; // accept proposal
 	} while (step > 1);
 
@@ -519,46 +521,52 @@ __global__ void rayCast(TColor *dst, int imageW, int imageH, Camera camera,
 	const unsigned int ix = blockDim.x * blockIdx.x + threadIdx.x;
 	const unsigned int iy = blockDim.y * blockIdx.y + threadIdx.y;
 
-	Triangle triangle;
-	//Color of our pixel
-	Radiance3 L_o(0.08f, 0.08f, 0.08f);
-	const Ray& ray = camera.computeEyeRay(ix + 0.5f, iy + 0.5f, imageW, imageH);
-	//Now find the closest triangle that intersects with our ray
-	float distance = INFINITY;
+	if (ix < imageW && iy < imageH) {
+		Triangle triangle;
+		//Color of our pixel
+		Radiance3 L_o(0.08f, 0.08f, 0.08f);
+		const Ray& ray = camera.computeEyeRay(ix + 0.5f, iy + 0.5f, imageW,
+				imageH);
+		//Now find the closest triangle that intersects with our ray
+		float distance = INFINITY;
 
-	int stack[128];
-	int stackIdx = 0;
-	stack[stackIdx++] = 0; // index to the first BVH node
-	while (stackIdx) {
-		BVHNode* current = &d_bvhNodes[stack[stackIdx - 1]];
-		stackIdx--;
-		if (rayAABBIntersect(ray, current->aabb)) {
-			if (!current->isLeaf) {
-				stack[stackIdx++] = current->left;
-				stack[stackIdx++] = current->right;
-			} else {
-				// Leaf node
-				triangle.load(
-						getVector((d_faces[current->objectId * 6] - 1) * 3,
-								d_vertices),
-						getVector((d_faces[current->objectId * 6 + 1] - 1) * 3,
-								d_vertices),
-						getVector((d_faces[current->objectId * 6 + 2] - 1) * 3,
-								d_vertices),
-						getVector((d_faces[current->objectId * 6 + 3] - 1) * 3,
-								d_normals),
-						getVector((d_faces[current->objectId * 6 + 4] - 1) * 3,
-								d_normals),
-						getVector((d_faces[current->objectId * 6 + 5] - 1) * 3,
-								d_normals),
-						BSDF(Color3(0.4f, 0.8f, 0.2f), Color3(0.2f, 0.2f, 0.2f),
-								80.0f));
-				sampleRayTriangle(ray, triangle, L_o, distance, light);
+		int triangles[8];
+		int triangleCount = 0;
+		int stack[32];
+		int stackIdx = 0;
+		stack[stackIdx++] = 0; // index to the first BVH node
+		while (stackIdx) {
+			BVHNode* current = &d_bvhNodes[stack[stackIdx - 1]];
+			stackIdx--;
+			if (rayAABBIntersect(ray, current->aabb)) {
+				if (!current->isLeaf) {
+					// Internal node
+					stack[stackIdx++] = current->left;
+					stack[stackIdx++] = current->right;
+				} else {
+					// Leaf node
+					triangles[triangleCount++] = current->objectId;
+				}
 			}
 		}
-	}
-	//Draw our pixel if we are not outside of the buffer!
-	if (ix < imageW && iy < imageH) {
+
+		for (int i = 0; i < triangleCount; i++) {
+			triangle.load(
+					getVector((d_faces[triangles[i] * 6] - 1) * 3, d_vertices),
+					getVector((d_faces[triangles[i] * 6 + 1] - 1) * 3,
+							d_vertices),
+					getVector((d_faces[triangles[i] * 6 + 2] - 1) * 3,
+							d_vertices),
+					getVector((d_faces[triangles[i] * 6 + 3] - 1) * 3,
+							d_normals),
+					getVector((d_faces[triangles[i] * 6 + 4] - 1) * 3,
+							d_normals),
+					getVector((d_faces[triangles[i] * 6 + 5] - 1) * 3,
+							d_normals),
+					BSDF(Color3(0.4f, 0.8f, 0.2f), Color3(0.2f, 0.2f, 0.2f),
+							80.0f));
+			sampleRayTriangle(ray, triangle, L_o, distance, light);
+		}
 		dst[imageW * iy + ix] = make_color(min(L_o.r, 1.0f), min(L_o.g, 1.0f),
 				min(L_o.b, 1.0f), 1.0);
 	}
@@ -601,8 +609,8 @@ extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
 
 	//Calculate AABBs and morton codes for leaf nodes
 	//printf("%d\n", faceCount);
-	calculateLeafAABBs<<<faceCount/512 + 1, 512>>>(faceCount, d_faces, d_vertices,
-			d_objectIds, d_aabbs);
+	calculateLeafAABBs<<<faceCount / 512 + 1, 512>>>(faceCount, d_faces,
+			d_vertices, d_objectIds, d_aabbs);
 	cudaMemcpy(h_aabbs, d_aabbs, faceCount * sizeof(AABoundingBox),
 			cudaMemcpyDeviceToHost);
 	Vector3 sceneMin(INFINITY, INFINITY, INFINITY), sceneMax(-INFINITY,
@@ -623,8 +631,8 @@ extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
 		if (aabb.maxZ > sceneMax.z)
 			sceneMax.z = aabb.maxZ;
 	}
-	assignMortonCodes<<<faceCount/512 + 1, 512>>>(d_mortonCodes, d_aabbs, faceCount,
-			sceneMin, sceneMax);
+	assignMortonCodes<<<faceCount / 512 + 1, 512>>>(d_mortonCodes, d_aabbs,
+			faceCount, sceneMin, sceneMax);
 	cudaDeviceSynchronize();
 	//Sort objects by morton codes
 	thrust::device_ptr<unsigned int> d_data_ptr(d_objectIds);
@@ -632,14 +640,14 @@ extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
 	thrust::sort_by_key(d_keys_ptr, d_keys_ptr + faceCount, d_data_ptr);
 	d_mortonCodes = thrust::raw_pointer_cast(d_keys_ptr);
 	d_objectIds = thrust::raw_pointer_cast(d_data_ptr);
-	createHierarchy<<<faceCount/512 + 1, 512>>>(d_objectIds, d_mortonCodes, d_aabbs,
-			faceCount, d_bvhNodes);
+	createHierarchy<<<faceCount / 512 + 1, 512>>>(d_objectIds, d_mortonCodes,
+			d_aabbs, faceCount, d_bvhNodes);
 	cudaDeviceSynchronize();
 	//Calculate bounding boxes for internal nodes
-	calculateTreeAABBs<<<faceCount/512 + 1, 512>>>(d_bvhNodes, faceCount);
+	calculateTreeAABBs<<<faceCount / 512 + 1, 512>>>(d_bvhNodes, faceCount);
 	cudaDeviceSynchronize();
 	//Raycast
-	rayCast<<<grid, threads>>>(
-			d_dst, imageW, imageH, camera, light, faceCount, vertexCount,
-			normalCount, d_faces, d_vertices, d_normals,d_bvhNodes);
+	rayCast<<<grid, threads>>>(d_dst, imageW, imageH, camera, light, faceCount,
+			vertexCount, normalCount, d_faces, d_vertices, d_normals,
+			d_bvhNodes);
 }
