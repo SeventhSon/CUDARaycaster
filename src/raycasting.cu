@@ -243,7 +243,7 @@ __device__ int lzc(unsigned int x) {
 __device__ int commonPrefixCount(unsigned int* d_sortedMortonCodes,
 		unsigned int i, unsigned int j) {
 	if (d_sortedMortonCodes[i] == d_sortedMortonCodes[j])
-		return lzc(i ^ j);
+		return lzc(i ^ j);//this is probably wrong, fix
 	return lzc(d_sortedMortonCodes[i] ^ d_sortedMortonCodes[j]);
 }
 
@@ -500,11 +500,8 @@ __global__ void createHierarchy(unsigned int* d_sortedObjectIds,
 
 		d_bvhNodes[idx].left = left;
 		d_bvhNodes[idx].right = right;
-		d_bvhNodes[idx].start = first;
-		d_bvhNodes[idx].stop = last;
 		d_bvhNodes[idx].isLeaf = false;
 		d_bvhNodes[idx].visited = 0;
-		d_bvhNodes[idx].objectId = 0;
 		if (idx == 0)
 			d_bvhNodes[idx].parent = -1;
 		d_bvhNodes[left].parent = idx;
@@ -517,10 +514,10 @@ __global__ void rayCast(TColor *dst, int imageW, int imageH, Camera camera,
 		Light light, unsigned int faceCount, unsigned int vertexCount,
 		unsigned int normalCount, unsigned int* d_faces, float* d_vertices,
 		float*d_normals, BVHNode* d_bvhNodes) {
+
 	//Global x, y image coordinates
 	const unsigned int ix = blockDim.x * blockIdx.x + threadIdx.x;
 	const unsigned int iy = blockDim.y * blockIdx.y + threadIdx.y;
-	//Number of threads in a block
 
 	Triangle triangle;
 	//Color of our pixel
@@ -528,6 +525,7 @@ __global__ void rayCast(TColor *dst, int imageW, int imageH, Camera camera,
 	const Ray& ray = camera.computeEyeRay(ix + 0.5f, iy + 0.5f, imageW, imageH);
 	//Now find the closest triangle that intersects with our ray
 	float distance = INFINITY;
+
 	int stack[128];
 	int stackIdx = 0;
 	stack[stackIdx++] = 0; // index to the first BVH node
@@ -559,7 +557,6 @@ __global__ void rayCast(TColor *dst, int imageW, int imageH, Camera camera,
 			}
 		}
 	}
-	//__syncthreads();
 	//Draw our pixel if we are not outside of the buffer!
 	if (ix < imageW && iy < imageH) {
 		dst[imageW * iy + ix] = make_color(min(L_o.r, 1.0f), min(L_o.g, 1.0f),
@@ -603,8 +600,8 @@ extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
 	dim3 grid(iDivUp(imageW, BLOCKDIM_X), iDivUp(imageH, BLOCKDIM_Y));
 
 	//Calculate AABBs and morton codes for leaf nodes
-	printf("%d\n", faceCount);
-	calculateLeafAABBs<<<2, 512>>>(faceCount, d_faces, d_vertices,
+	//printf("%d\n", faceCount);
+	calculateLeafAABBs<<<faceCount/512 + 1, 512>>>(faceCount, d_faces, d_vertices,
 			d_objectIds, d_aabbs);
 	cudaMemcpy(h_aabbs, d_aabbs, faceCount * sizeof(AABoundingBox),
 			cudaMemcpyDeviceToHost);
@@ -626,7 +623,7 @@ extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
 		if (aabb.maxZ > sceneMax.z)
 			sceneMax.z = aabb.maxZ;
 	}
-	assignMortonCodes<<<2, 512>>>(d_mortonCodes, d_aabbs, faceCount,
+	assignMortonCodes<<<faceCount/512 + 1, 512>>>(d_mortonCodes, d_aabbs, faceCount,
 			sceneMin, sceneMax);
 	cudaDeviceSynchronize();
 	//Sort objects by morton codes
@@ -635,16 +632,14 @@ extern "C" void cuda_rayCasting(TColor *d_dst, int imageW, int imageH,
 	thrust::sort_by_key(d_keys_ptr, d_keys_ptr + faceCount, d_data_ptr);
 	d_mortonCodes = thrust::raw_pointer_cast(d_keys_ptr);
 	d_objectIds = thrust::raw_pointer_cast(d_data_ptr);
-	cudaDeviceSynchronize();
-	createHierarchy<<<2, 512>>>(d_objectIds, d_mortonCodes, d_aabbs,
+	createHierarchy<<<faceCount/512 + 1, 512>>>(d_objectIds, d_mortonCodes, d_aabbs,
 			faceCount, d_bvhNodes);
 	cudaDeviceSynchronize();
 	//Calculate bounding boxes for internal nodes
-	calculateTreeAABBs<<<2, 512>>>(d_bvhNodes, faceCount);
+	calculateTreeAABBs<<<faceCount/512 + 1, 512>>>(d_bvhNodes, faceCount);
 	cudaDeviceSynchronize();
 	//Raycast
 	rayCast<<<grid, threads>>>(
 			d_dst, imageW, imageH, camera, light, faceCount, vertexCount,
 			normalCount, d_faces, d_vertices, d_normals,d_bvhNodes);
-	cudaDeviceSynchronize();
 }

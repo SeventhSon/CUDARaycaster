@@ -81,5 +81,6 @@ bool objLoader::parseOBJ(const char* path) {
 		triangles_arr[i + 5] = triangles[j].n3;
 		j++;
 	}
+	printf("Triangles: %d\n",faceCount);
 	return true;
 }

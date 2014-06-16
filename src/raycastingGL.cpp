@@ -23,7 +23,7 @@ GLuint gl_PBO, gl_Tex;
 struct cudaGraphicsResource *cuda_pbo_resource; // handles OpenGL-CUDA exchange
 //Source image on the host side
 uchar4 *h_Src;
-int imageW = 1024, imageH = 768;
+int imageW = 1360, imageH = 768;
 GLuint shader;
 
 //Host side scene definition arrays
@@ -103,7 +103,7 @@ void computeFPS() {
 		glutSetWindowTitle(fps);
 		fpsCount = 0;
 
-		//fpsLimit = (int)MAX(ifps, 1.f);
+		fpsLimit = (int)MAX(ifps, 1.f);
 		sdkResetTimer(&timer);
 	}
 }
@@ -139,7 +139,7 @@ void displayFunc(void) {
 	cuda_rayCasting(d_dst, imageW, imageH, cam, light, loader.faceCount,
 			loader.vertexCount, loader.normalCount, d_faces, d_vertices,
 			d_normals, d_objectIds, d_mortonCodes, d_aabbs, d_bvhNodes, h_aabbs);
-	checkCudaErrors(
+	/*checkCudaErrors(
 			cudaMemcpy(h_mortonCodes, d_mortonCodes,
 					loader.faceCount * sizeof(unsigned int),
 					cudaMemcpyDeviceToHost));
@@ -161,12 +161,12 @@ void displayFunc(void) {
 	}
 	for (int i = 0; i < loader.faceCount*2 -1; i++) {
 		printf("ID: %d\tparent: %d\tsplit: %d\tIsLeaf: %d\tObjId: %u\tleft %d  \tright %d  \tstart %d  \tstop %d\n", i, h_bvhNodes[i].parent, h_bvhNodes[i].visited, h_bvhNodes[i].isLeaf,h_bvhNodes[i].objectId,h_bvhNodes[i].left,h_bvhNodes[i].right,h_bvhNodes[i].start,h_bvhNodes[i].stop);
-		/*printf("AABB %f %f %f %f %f %f\n",h_bvhNodes[i].aabb.minX,
+		printf("AABB %f %f %f %f %f %f\n",h_bvhNodes[i].aabb.minX,
 				h_bvhNodes[i].aabb.minY, h_bvhNodes[i].aabb.minZ,
 				h_bvhNodes[i].aabb.maxX, h_bvhNodes[i].aabb.maxY,
-				h_bvhNodes[i].aabb.maxZ);*/
+				h_bvhNodes[i].aabb.maxZ);
 
-	}
+	}*/
 	getLastCudaError("Raycasting kernel execution failed.\n");
 	//////////////////////////////////////////////////////////////////////////////
 
@@ -226,13 +226,13 @@ void shutDown(unsigned char k, int /*x*/, int /*y*/) {
 		exit(EXIT_SUCCESS);
 		break;
 		//Light manipulation
-	case 'd':
+	case 'a':
 		light.position = Vector3(light.position.x - 0.4f, light.position.y,
 				light.position.z);
 		printf("Light (%f, %f, %f)\n", light.position.x, light.position.y,
 				light.position.z);
 		break;
-	case 'a':
+	case 'd':
 		light.position = Vector3(light.position.x + 0.4f, light.position.y,
 				light.position.z);
 		printf("Light (%f, %f, %f)\n", light.position.x, light.position.y,
@@ -265,10 +265,10 @@ void shutDown(unsigned char k, int /*x*/, int /*y*/) {
 	case 'r':
 		if (R) {
 			R = false;
-			printf("Rotation OFF");
+			printf("Rotation OFF\n");
 		} else {
 			R = true;
-			printf("Rotation ON");
+			printf("Rotation ON\n");
 		}
 		break;
 	case '+':
@@ -401,7 +401,7 @@ int main(int argc, char **argv) {
 	initOpenGLBuffers();
 
 	//Let's parse our object!
-	if (loader.parseOBJ("data/suzzane2.obj")) {
+	if (loader.parseOBJ("data/dragon.obj")) {
 		//Allocating arrays for our data
 		checkCudaErrors(
 				cudaMalloc(&d_faces,

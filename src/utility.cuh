@@ -221,7 +221,7 @@ public:
 	AABoundingBox aabb;
 	bool isLeaf;
 	unsigned int objectId;
-	int left, right, parent, start, stop;
+	int left, right, parent;
 	int visited;
 	CUDA_CALLABLE_MEMBER BVHNode(AABoundingBox aabb): visited(0),aabb(aabb){
 
